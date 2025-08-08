@@ -1,20 +1,27 @@
 const std = @import("std");
 
 const Args = struct {
-    rom_path: ?[]const u8,
+    help: bool = false,
+    rom_path: ?[]const u8 = null,
 };
 
 fn parseArgs() !Args {
     const alloc = std.heap.page_allocator;
     var args_it = try std.process.argsWithAllocator(alloc);
     defer args_it.deinit();
-    var args = Args{
-        .rom_path = null,
+    var args = Args{};
+
+    const S = struct {
+        inline fn makeArg(arg: []const u8, comptime short: []const u8, comptime long: []const u8) bool {
+            return std.mem.eql(u8, arg, short) or std.mem.eql(u8, arg, long);
+        }
     };
 
     _ = args_it.skip();
     while (args_it.next()) |arg| {
-        if (false) {} else {
+        if (S.makeArg(arg, "-h", "--help")) {
+            args.help = true;
+        } else {
             args.rom_path = arg;
         }
     }
@@ -24,24 +31,63 @@ fn parseArgs() !Args {
 
 const Handler = *const fn (*Cpu) void;
 
+const OpHandler = struct {
+    opcode: u16,
+    handler: Handler,
+};
+
+fn handlerU00E0(_: *Cpu) void {
+    unreachable;
+}
+
+fn handlerU00EE(_: *Cpu) void {
+    unreachable;
+}
+
+fn handlerUnreachable(_: *Cpu) void {
+    unreachable;
+}
+
 const Bus = struct {
-    const MEM_SIZE: usize = 4 * 1024 * 1024;
+    const mem_size = 4 * 1024 * 1024;
 
-    mem: [MEM_SIZE]u8,
+    mem: [mem_size]u8 align(2),
 
-    // pub fn read(self: *const Bus) u16 {}
+    pub fn read(self: *const Bus, comptime T: type, addr: u16) T {
+        return @as(*T, @alignCast(@constCast(@ptrCast(self.mem[addr..])))).*;
+    }
 
-    // pub fn write(self: *Bus, value: u8) void {}
+    // pub fn write(self: *Bus, addr: u16,value: u8) void {}
 };
 
 const Cpu = struct {
+    pc: u16,
+    regs: [0xF]u8,
     bus: *Bus,
+    cycle: usize,
 
-    // pub fn fetch(self: *Cpu) u16 {}
+    pub fn fetch(self: *Cpu) u16 {
+        defer self.pc += 2;
+        return self.bus.read(u16, self.pc);
+    }
 
-    // pub fn decode(self: *Cpu, opcode: u16) Handler {}
+    pub fn decode(_: *const Cpu, opcode: u16) ?Handler {
+        const op_map = [_]OpHandler{
+            .{ .opcode = 0x00E0, .handler = handlerU00E0 },
+            .{ .opcode = 0x00EE, .handler = handlerU00EE },
+        };
 
-    // pub fn execute(self: *Cpu, handler: Handler) void {}
+        for (op_map) |op| {
+            if (opcode & op.opcode == 0) {
+                return op.handler;
+            }
+        }
+        return null;
+    }
+
+    pub fn execute(self: *Cpu, handler: Handler) void {
+        handler(self);
+    }
 };
 
 const Z8 = struct {
@@ -51,7 +97,7 @@ const Z8 = struct {
 
     pub fn init() !Z8 {
         var bus = Bus{
-            .mem = [_]u8{0} ** Bus.MEM_SIZE,
+            .mem = [_]u8{0} ** Bus.mem_size,
         };
         var gpa = std.heap.GeneralPurposeAllocator(.{}){};
         const alloc = gpa.allocator();
@@ -60,7 +106,10 @@ const Z8 = struct {
             .alloc = alloc,
             .bus = bus,
             .cpu = Cpu{
+                .pc = 0x200,
                 .bus = &bus,
+                .regs = [_]u8{0} ** 0xF,
+                .cycle = 0,
             },
         };
     }
@@ -80,11 +129,14 @@ const Z8 = struct {
     }
 
     pub fn run(self: *Z8) void {
-        _ = self;
         while (true) {
-            // const opcode = self.cpu.fetch();
-            // const handler = self.cpu.decode(opcode);
-            // self.cpu.execute(handler);
+            const opcode = self.cpu.fetch();
+            const handler = self.cpu.decode(opcode);
+            if (handler) |h| {
+                self.cpu.execute(h);
+            } else {
+                std.log.warn("Invalid opcode 0x{x:0<4}", .{opcode});
+            }
         }
     }
 };
@@ -92,6 +144,9 @@ const Z8 = struct {
 pub fn main() !void {
     const args = try parseArgs();
 
+    if (args.help) {
+        return;
+    }
     if (args.rom_path == null) {
         std.log.err("Provide a rom path", .{});
         return error.MissingRomPath;
