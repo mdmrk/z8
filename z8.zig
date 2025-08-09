@@ -1,4 +1,5 @@
 const std = @import("std");
+const sdl3 = @import("sdl3");
 
 const Args = struct {
     help: bool = false,
@@ -6,7 +7,6 @@ const Args = struct {
 };
 
 fn parseArgs() !Args {
-    const alloc = std.heap.page_allocator;
     var args_it = try std.process.argsWithAllocator(alloc);
     defer args_it.deinit();
     var args = Args{};
@@ -29,19 +29,36 @@ fn parseArgs() !Args {
     return args;
 }
 
-const Handler = *const fn (*Cpu) void;
+const Handler = *const fn (*Cpu, u16) void;
 
 const OpHandler = struct {
     opcode: u16,
+    mask: u16,
     handler: Handler,
 };
 
-fn handlerU00E0(_: *Cpu) void {
-    unreachable;
+fn handler0NNN(_: *Cpu, opcode: u16) void {
+    _ = opcode;
 }
 
-fn handlerU00EE(_: *Cpu) void {
-    unreachable;
+fn handler00E0(_: *Cpu, opcode: u16) void {
+    _ = opcode;
+}
+
+fn handler00EE(_: *Cpu, opcode: u16) void {
+    _ = opcode;
+}
+
+fn handler6XNN(self: *Cpu, opcode: u16) void {
+    const x: u8 = @truncate((opcode & 0x0F00) >> 8);
+    const nn: u8 = @truncate(opcode & 0x00FF);
+    self.regs[x] = nn;
+}
+
+fn handler7XNN(self: *Cpu, opcode: u16) void {
+    const x: u8 = @truncate((opcode & 0x0F00) >> 8);
+    const nn: u8 = @truncate(opcode & 0x00FF);
+    self.regs[x] += nn;
 }
 
 fn handlerUnreachable(_: *Cpu) void {
@@ -57,7 +74,9 @@ const Bus = struct {
         return @as(*T, @alignCast(@constCast(@ptrCast(self.mem[addr..])))).*;
     }
 
-    // pub fn write(self: *Bus, addr: u16,value: u8) void {}
+    pub fn write(comptime T: type, self: *Bus, addr: u16, value: T) void {
+        @as(*T, @alignCast(@constCast(@ptrCast(self.mem[addr..])))).* = value;
+    }
 };
 
 const Cpu = struct {
@@ -73,20 +92,23 @@ const Cpu = struct {
 
     pub fn decode(_: *const Cpu, opcode: u16) ?Handler {
         const op_map = [_]OpHandler{
-            .{ .opcode = 0x00E0, .handler = handlerU00E0 },
-            .{ .opcode = 0x00EE, .handler = handlerU00EE },
+            .{ .opcode = 0x00E0, .mask = 0x0000, .handler = handler00E0 },
+            .{ .opcode = 0x00EE, .mask = 0x0000, .handler = handler00EE },
+            .{ .opcode = 0x0000, .mask = 0x0111, .handler = handler0NNN },
+            .{ .opcode = 0x6000, .mask = 0x0111, .handler = handler6XNN },
+            .{ .opcode = 0x7000, .mask = 0x0111, .handler = handler7XNN },
         };
 
         for (op_map) |op| {
-            if (opcode & op.opcode == 0) {
+            if (opcode & ~op.mask == op.opcode) {
                 return op.handler;
             }
         }
         return null;
     }
 
-    pub fn execute(self: *Cpu, handler: Handler) void {
-        handler(self);
+    pub fn execute(self: *Cpu, handler: Handler, opcode: u16) void {
+        handler(self, opcode);
     }
 };
 
@@ -99,8 +121,6 @@ const Z8 = struct {
         var bus = Bus{
             .mem = [_]u8{0} ** Bus.mem_size,
         };
-        var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-        const alloc = gpa.allocator();
 
         return .{
             .alloc = alloc,
@@ -133,7 +153,7 @@ const Z8 = struct {
             const opcode = self.cpu.fetch();
             const handler = self.cpu.decode(opcode);
             if (handler) |h| {
-                self.cpu.execute(h);
+                self.cpu.execute(h, opcode);
             } else {
                 std.log.warn("Invalid opcode 0x{x:0<4}", .{opcode});
             }
@@ -141,17 +161,98 @@ const Z8 = struct {
     }
 };
 
-pub fn main() !void {
+const alloc = std.heap.smp_allocator;
+const fps = 60;
+const screen_width = 640;
+const screen_height = 480;
+
+const AppState = struct {
+    fps_capper: sdl3.extras.FramerateCapper(f32),
+    window: sdl3.video.Window,
+    renderer: sdl3.render.Renderer,
+};
+
+fn init(
+    app_state: *?*AppState,
+    _: [][*:0]u8,
+) !sdl3.AppResult {
     const args = try parseArgs();
 
     if (args.help) {
-        return;
+        return .success;
     }
     if (args.rom_path == null) {
         std.log.err("Provide a rom path", .{});
         return error.MissingRomPath;
     }
+
+    const init_flags: sdl3.InitFlags = .{ .video = true };
+    try sdl3.init(init_flags);
+
+    const wr = try sdl3.render.Renderer.initWithWindow("z8", screen_width, screen_height, .{});
+    const window = wr.window;
+    const renderer = wr.renderer;
+
     var z8 = try Z8.init();
     try z8.loadRom(args.rom_path.?);
-    z8.run();
+    // z8.run();
+
+    const state = try alloc.create(AppState);
+    state.* = .{
+        .fps_capper = .{
+            .mode = .{
+                .limited = fps,
+            },
+        },
+        .window = window,
+        .renderer = renderer,
+    };
+    app_state.* = state;
+    return .run;
+}
+
+fn iterate(
+    app_state: *AppState,
+) !sdl3.AppResult {
+    const dt = app_state.fps_capper.delay();
+    _ = dt;
+
+    try app_state.renderer.setDrawColorFloat(.{ .r = 0, .b = 0, .g = 0, .a = 1 });
+    try app_state.renderer.clear();
+    try app_state.renderer.present();
+
+    return .run;
+}
+
+fn event(
+    app_state: *AppState,
+    curr_event: sdl3.events.Event,
+) !sdl3.AppResult {
+    _ = app_state;
+
+    return switch (curr_event) {
+        .quit => .success,
+        .terminating => .success,
+        else => .run,
+    };
+}
+
+fn quit(
+    app_state: ?*AppState,
+    result: sdl3.AppResult,
+) void {
+    if (app_state) |state| {
+        state.renderer.deinit();
+        state.window.deinit();
+        alloc.destroy(state);
+    }
+    if (result == .success) {
+        std.log.info("Application quit successfully", .{});
+    }
+}
+
+pub fn main() u8 {
+    sdl3.main_funcs.setMainReady();
+    var args = [_:null]?[*:0]u8{};
+    return sdl3.main_funcs.enterAppMainCallbacks(&args, AppState, init, iterate, event, quit);
 }

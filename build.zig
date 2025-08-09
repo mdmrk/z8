@@ -13,6 +13,14 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
+    const sdl3 = b.dependency("sdl3", .{
+        .target = target,
+        .optimize = optimize,
+        .c_sdl_preferred_linkage = .static,
+        // .c_sdl_lto = .none,
+    });
+    exe.root_module.addImport("sdl3", sdl3.module("sdl3"));
+
     b.installArtifact(exe);
 
     const run_step = b.step("run", "Run the app");
