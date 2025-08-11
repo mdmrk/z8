@@ -46,25 +46,149 @@ fn handler00E0(_: *Cpu, ppu: *Ppu, _: u16) void {
     ppu.clear();
 }
 
-fn handler00EE(_: *Cpu, _: *Ppu, opcode: u16) void {
-    _ = opcode;
+fn handler00EE(cpu: *Cpu, _: *Ppu, _: u16) void {
+    if (cpu.sp == 0) {
+        std.log.err("Reached stack bottom", .{});
+        return;
+    }
+    cpu.sp -= 1;
+    cpu.pc = cpu.stack[cpu.sp];
 }
 
-fn handler6XNN(self: *Cpu, _: *Ppu, opcode: u16) void {
-    const x: u8 = @truncate((opcode & 0x0F00) >> 8);
-    const nn: u8 = @truncate(opcode & 0x00FF);
-    self.regs[x] = nn;
-}
-
-fn handler7XNN(self: *Cpu, _: *Ppu, opcode: u16) void {
-    const x: u8 = @truncate((opcode & 0x0F00) >> 8);
-    const nn: u8 = @truncate(opcode & 0x00FF);
-    self.regs[x] +%= nn;
-}
-
-fn handlerANNN(self: *Cpu, _: *Ppu, opcode: u16) void {
+fn handler1NNN(cpu: *Cpu, _: *Ppu, opcode: u16) void {
     const nnn: u16 = @truncate(opcode & 0x0FFF);
-    self.i = nnn;
+    cpu.pc = nnn;
+}
+
+fn handler2NNN(cpu: *Cpu, _: *Ppu, opcode: u16) void {
+    const nnn: u16 = @truncate(opcode & 0x0FFF);
+    if (cpu.sp == std.math.maxInt(@TypeOf(cpu.sp))) {
+        std.log.err("Stack overflow", .{});
+        return;
+    }
+    cpu.stack[cpu.sp] = cpu.pc;
+    cpu.sp += 1;
+    cpu.pc = nnn;
+}
+
+fn handler3XNN(cpu: *Cpu, _: *Ppu, opcode: u16) void {
+    const vx: u8 = @truncate((opcode & 0x0F00) >> 8);
+    const nn: u8 = @truncate(opcode & 0x00FF);
+    if (cpu.regs[vx] == nn) {
+        cpu.pc += 2;
+    }
+}
+
+fn handler4XNN(cpu: *Cpu, _: *Ppu, opcode: u16) void {
+    const vx: u8 = @truncate((opcode & 0x0F00) >> 8);
+    const nn: u8 = @truncate(opcode & 0x00FF);
+    if (cpu.regs[vx] != nn) {
+        cpu.pc += 2;
+    }
+}
+
+fn handler5XY0(cpu: *Cpu, _: *Ppu, opcode: u16) void {
+    const vx: u8 = @truncate((opcode & 0x0F00) >> 8);
+    const vy: u8 = @truncate((opcode & 0x00F0) >> 4);
+    if (cpu.regs[vx] == cpu.regs[vy]) {
+        cpu.pc += 2;
+    }
+}
+
+fn handler6XNN(cpu: *Cpu, _: *Ppu, opcode: u16) void {
+    const vx: u8 = @truncate((opcode & 0x0F00) >> 8);
+    const nn: u8 = @truncate(opcode & 0x00FF);
+    cpu.regs[vx] = nn;
+}
+
+fn handler7XNN(cpu: *Cpu, _: *Ppu, opcode: u16) void {
+    const vx: u8 = @truncate((opcode & 0x0F00) >> 8);
+    const nn: u8 = @truncate(opcode & 0x00FF);
+    cpu.regs[vx] +%= nn;
+}
+
+fn handler8XY0(cpu: *Cpu, _: *Ppu, opcode: u16) void {
+    const vx: u8 = @truncate((opcode & 0x0F00) >> 8);
+    const vy: u8 = @truncate((opcode & 0x00FF) >> 4);
+    cpu.regs[vx] = cpu.regs[vy];
+}
+
+fn handler8XY1(cpu: *Cpu, _: *Ppu, opcode: u16) void {
+    const vx: u8 = @truncate((opcode & 0x0F00) >> 8);
+    const vy: u8 = @truncate((opcode & 0x00FF) >> 4);
+    cpu.regs[vx] |= cpu.regs[vy];
+}
+
+fn handler8XY2(cpu: *Cpu, _: *Ppu, opcode: u16) void {
+    const vx: u8 = @truncate((opcode & 0x0F00) >> 8);
+    const vy: u8 = @truncate((opcode & 0x00FF) >> 4);
+    cpu.regs[vx] &= cpu.regs[vy];
+}
+
+fn handler8XY3(cpu: *Cpu, _: *Ppu, opcode: u16) void {
+    const vx: u8 = @truncate((opcode & 0x0F00) >> 8);
+    const vy: u8 = @truncate((opcode & 0x00FF) >> 4);
+    cpu.regs[vx] ^= cpu.regs[vy];
+}
+
+fn handler8XY4(cpu: *Cpu, _: *Ppu, opcode: u16) void {
+    const vx: u8 = @truncate((opcode & 0x0F00) >> 8);
+    const vy: u8 = @truncate((opcode & 0x00FF) >> 4);
+    if ((vx +% vy) < vx or (vx +% vy) < vy) {
+        cpu.regs[0xF] = 1;
+    } else {
+        cpu.regs[0xF] = 0;
+    }
+    cpu.regs[vx] +%= cpu.regs[vy];
+}
+
+fn handler8XY5(cpu: *Cpu, _: *Ppu, opcode: u16) void {
+    const vx: u8 = @truncate((opcode & 0x0F00) >> 8);
+    const vy: u8 = @truncate((opcode & 0x00FF) >> 4);
+    if (cpu.regs[vx] > cpu.regs[vy]) {
+        cpu.regs[0xF] = 1;
+    } else {
+        cpu.regs[0xF] = 0;
+    }
+    cpu.regs[vx] -%= cpu.regs[vy];
+}
+
+fn handler8XY6(cpu: *Cpu, _: *Ppu, opcode: u16) void {
+    const vx: u8 = @truncate((opcode & 0x0F00) >> 8);
+    const vy: u8 = @truncate((opcode & 0x00FF) >> 4);
+    cpu.regs[0xF] = cpu.regs[vy] & 1;
+    cpu.regs[vx] = cpu.regs[vy] >> 1;
+}
+
+fn handler8XY7(cpu: *Cpu, _: *Ppu, opcode: u16) void {
+    const vx: u8 = @truncate((opcode & 0x0F00) >> 8);
+    const vy: u8 = @truncate((opcode & 0x00FF) >> 4);
+    if (cpu.regs[vx] > cpu.regs[vy]) {
+        cpu.regs[0xF] = 1;
+    } else {
+        cpu.regs[0xF] = 0;
+    }
+    cpu.regs[vx] = cpu.regs[vy] -% cpu.regs[vx];
+}
+
+fn handler8XYE(cpu: *Cpu, _: *Ppu, opcode: u16) void {
+    const vx: u8 = @truncate((opcode & 0x0F00) >> 8);
+    const vy: u8 = @truncate((opcode & 0x00FF) >> 4);
+    cpu.regs[0xF] = (cpu.regs[vy] >> 7) & 1;
+    cpu.regs[vx] = cpu.regs[vy] << 1;
+}
+
+fn handler9XY0(cpu: *Cpu, _: *Ppu, opcode: u16) void {
+    const vx: u8 = @truncate((opcode & 0x0F00) >> 8);
+    const vy: u8 = @truncate((opcode & 0x00F0) >> 4);
+    if (cpu.regs[vx] != cpu.regs[vy]) {
+        cpu.pc += 2;
+    }
+}
+
+fn handlerANNN(cpu: *Cpu, _: *Ppu, opcode: u16) void {
+    const nnn: u16 = @truncate(opcode & 0x0FFF);
+    cpu.i = nnn;
 }
 
 fn handlerDXYN(cpu: *Cpu, ppu: *Ppu, opcode: u16) void {
@@ -128,6 +252,8 @@ const Bus = struct {
 
 const Cpu = struct {
     pc: u16,
+    stack: [16]u16,
+    sp: u8,
     regs: [16]u8,
     i: u16,
     bus: Bus,
@@ -136,6 +262,8 @@ const Cpu = struct {
     pub fn init() Cpu {
         return .{
             .pc = 0x200,
+            .stack = [_]u16{0} ** 16,
+            .sp = 0,
             .regs = [_]u8{0} ** 16,
             .i = 0,
             .bus = Bus.init(),
@@ -154,8 +282,23 @@ const Cpu = struct {
             .{ .opcode = 0x00E0, .mask = 0x0000, .handler = handler00E0 },
             .{ .opcode = 0x00EE, .mask = 0x0000, .handler = handler00EE },
             .{ .opcode = 0x0000, .mask = 0x0FFF, .handler = handler0NNN },
+            .{ .opcode = 0x1000, .mask = 0x0FFF, .handler = handler1NNN },
+            .{ .opcode = 0x2000, .mask = 0x0FFF, .handler = handler2NNN },
+            .{ .opcode = 0x3000, .mask = 0x0FFF, .handler = handler3XNN },
+            .{ .opcode = 0x4000, .mask = 0x0FFF, .handler = handler4XNN },
+            .{ .opcode = 0x5000, .mask = 0x0FF0, .handler = handler5XY0 },
             .{ .opcode = 0x6000, .mask = 0x0FFF, .handler = handler6XNN },
             .{ .opcode = 0x7000, .mask = 0x0FFF, .handler = handler7XNN },
+            .{ .opcode = 0x8000, .mask = 0x0FF0, .handler = handler8XY0 },
+            .{ .opcode = 0x8001, .mask = 0x0FF0, .handler = handler8XY1 },
+            .{ .opcode = 0x8002, .mask = 0x0FF0, .handler = handler8XY2 },
+            .{ .opcode = 0x8003, .mask = 0x0FF0, .handler = handler8XY3 },
+            .{ .opcode = 0x8004, .mask = 0x0FF0, .handler = handler8XY4 },
+            .{ .opcode = 0x8005, .mask = 0x0FF0, .handler = handler8XY5 },
+            .{ .opcode = 0x8006, .mask = 0x0FF0, .handler = handler8XY6 },
+            .{ .opcode = 0x8007, .mask = 0x0FF0, .handler = handler8XY7 },
+            .{ .opcode = 0x800E, .mask = 0x0FF0, .handler = handler8XYE },
+            .{ .opcode = 0x9000, .mask = 0x0FF0, .handler = handler9XY0 },
             .{ .opcode = 0xA000, .mask = 0x0FFF, .handler = handlerANNN },
             .{ .opcode = 0xD000, .mask = 0x0FFF, .handler = handlerDXYN },
         };
