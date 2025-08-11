@@ -7,6 +7,7 @@ var args: struct {
     rom_path: ?[]const u8 = null,
 } = .{};
 var want_step = true;
+var rand: std.Random = undefined;
 
 fn parseArgs() !void {
     var args_it = try std.process.argsWithAllocator(alloc);
@@ -191,6 +192,18 @@ fn handlerANNN(cpu: *Cpu, _: *Ppu, opcode: u16) void {
     cpu.i = nnn;
 }
 
+fn handlerBNNN(cpu: *Cpu, _: *Ppu, opcode: u16) void {
+    const nnn: u16 = @truncate(opcode & 0x0FFF);
+    cpu.i = nnn + cpu.regs[0];
+}
+
+fn handlerCXNN(cpu: *Cpu, _: *Ppu, opcode: u16) void {
+    const nn: u8 = @truncate(opcode & 0x00FF);
+    const vx: u8 = @truncate((opcode & 0x0F00) >> 8);
+    const random_n = rand.int(u8) & nn;
+    cpu.regs[vx] = random_n;
+}
+
 fn handlerDXYN(cpu: *Cpu, ppu: *Ppu, opcode: u16) void {
     const vx: u8 = @truncate((opcode & 0x0F00) >> 8);
     const vy: u8 = @truncate((opcode & 0x00F0) >> 4);
@@ -222,6 +235,89 @@ fn handlerDXYN(cpu: *Cpu, ppu: *Ppu, opcode: u16) void {
     }
 }
 
+fn handlerEX9E(cpu: *Cpu, _: *Ppu, opcode: u16) void {
+    const vx: u8 = @truncate((opcode & 0x0F00) >> 8);
+    if (cpu.pressed) |pressed| {
+        if (cpu.regs[vx] == pressed) {
+            cpu.pc += 2;
+        }
+    }
+}
+
+fn handlerEXA1(cpu: *Cpu, _: *Ppu, opcode: u16) void {
+    const vx: u8 = @truncate((opcode & 0x0F00) >> 8);
+    if (cpu.pressed) |pressed| {
+        if (cpu.regs[vx] != pressed) {
+            cpu.pc += 2;
+        }
+    } else {
+        cpu.pc += 2;
+    }
+}
+
+// fn handlerFX07(cpu: *Cpu, _: *Ppu, opcode: u16) void {}
+
+fn handlerFX0A(cpu: *Cpu, _: *Ppu, opcode: u16) void {
+    const vx: u8 = @truncate((opcode & 0x0F00) >> 8);
+    if (cpu.pressed) |pressed| {
+        cpu.regs[vx] = pressed;
+        cpu.can_inc_pc = true;
+    } else {
+        cpu.can_inc_pc = false;
+    }
+}
+
+// fn handlerFX15(cpu: *Cpu, _: *Ppu, opcode: u16) void {}
+
+// fn handlerFX18(cpu: *Cpu, _: *Ppu, opcode: u16) void {}
+
+fn handlerFX1E(cpu: *Cpu, _: *Ppu, opcode: u16) void {
+    const vx: u8 = @truncate((opcode & 0x0F00) >> 8);
+    cpu.i +%= cpu.regs[vx];
+}
+
+// fn handlerFX29(cpu: *Cpu, _: *Ppu, opcode: u16) void {}
+
+fn handlerFX33(cpu: *Cpu, _: *Ppu, opcode: u16) void {
+    const vx: u16 = @truncate((opcode & 0x0F00) >> 8);
+    const S = struct {
+        fn binToBCD(n: u8) u8 {
+            return switch (n) {
+                0 => 0b0000_0000,
+                1 => 0b0000_0001,
+                2 => 0b0000_0010,
+                3 => 0b0000_0011,
+                4 => 0b0000_0100,
+                5 => 0b0000_0101,
+                6 => 0b0000_0110,
+                7 => 0b0000_0111,
+                8 => 0b0000_1000,
+                9 => 0b0000_1001,
+                else => unreachable,
+            };
+        }
+    };
+    cpu.bus.write(u8, cpu.i + 2, S.binToBCD((cpu.regs[vx] / 100) % 10));
+    cpu.bus.write(u8, cpu.i + 1, S.binToBCD((cpu.regs[vx] / 10) % 10));
+    cpu.bus.write(u8, cpu.i + 0, S.binToBCD((cpu.regs[vx] / 1) % 10));
+}
+
+fn handlerFX55(cpu: *Cpu, _: *Ppu, opcode: u16) void {
+    const vx: u16 = @truncate((opcode & 0x0F00) >> 8);
+    for (0..vx + 1) |i| {
+        cpu.bus.write(u8, cpu.i + @as(u16, @intCast(i)), cpu.regs[i]);
+    }
+    cpu.i = cpu.i + vx + 1;
+}
+
+fn handlerFX65(cpu: *Cpu, _: *Ppu, opcode: u16) void {
+    const vx: u16 = @truncate((opcode & 0x0F00) >> 8);
+    for (0..vx + 1) |i| {
+        cpu.regs[i] = cpu.bus.read(u8, cpu.i);
+    }
+    cpu.i = cpu.i + vx + 1;
+}
+
 const Bus = struct {
     const mem_size = 4 * 1024 * 1024;
 
@@ -237,7 +333,7 @@ const Bus = struct {
         return @as(*T, @alignCast(@constCast(@ptrCast(self.mem[addr..])))).*;
     }
 
-    pub fn write(comptime T: type, self: *Bus, addr: u16, value: T) void {
+    pub fn write(self: *Bus, comptime T: type, addr: u16, value: T) void {
         @as(*T, @alignCast(@constCast(@ptrCast(self.mem[addr..])))).* = value;
     }
 
@@ -258,6 +354,8 @@ const Cpu = struct {
     i: u16,
     bus: Bus,
     cycles: usize,
+    pressed: ?u8,
+    can_inc_pc: bool,
 
     pub fn init() Cpu {
         return .{
@@ -268,13 +366,15 @@ const Cpu = struct {
             .i = 0,
             .bus = Bus.init(),
             .cycles = 0,
+            .pressed = null,
+            .can_inc_pc = true,
         };
     }
 
     pub fn fetch(self: *Cpu) u16 {
-        defer self.pc += 2;
         const opcode_be = self.bus.read(u16, self.pc);
-        return std.mem.bigToNative(u16, opcode_be);
+        const opcode = std.mem.bigToNative(u16, opcode_be);
+        return opcode;
     }
 
     pub fn decode(self: *const Cpu, opcode: u16) ?Handler {
@@ -300,7 +400,20 @@ const Cpu = struct {
             .{ .opcode = 0x800E, .mask = 0x0FF0, .handler = handler8XYE },
             .{ .opcode = 0x9000, .mask = 0x0FF0, .handler = handler9XY0 },
             .{ .opcode = 0xA000, .mask = 0x0FFF, .handler = handlerANNN },
+            .{ .opcode = 0xB000, .mask = 0x0FFF, .handler = handlerBNNN },
+            .{ .opcode = 0xC000, .mask = 0x0FFF, .handler = handlerCXNN },
             .{ .opcode = 0xD000, .mask = 0x0FFF, .handler = handlerDXYN },
+            .{ .opcode = 0xE09E, .mask = 0x0F00, .handler = handlerEX9E },
+            .{ .opcode = 0xE0A1, .mask = 0x0F00, .handler = handlerEXA1 },
+            // .{ .opcode = 0xF007, .mask = 0x0F00, .handler = handlerFX07 },
+            .{ .opcode = 0xF00A, .mask = 0x0F00, .handler = handlerFX0A },
+            // .{ .opcode = 0xF015, .mask = 0x0F00, .handler = handlerFX15 },
+            // .{ .opcode = 0xF018, .mask = 0x0F00, .handler = handlerFX18 },
+            .{ .opcode = 0xF01E, .mask = 0x0F00, .handler = handlerFX1E },
+            // .{ .opcode = 0xF029, .mask = 0x0F00, .handler = handlerFX29 },
+            .{ .opcode = 0xF033, .mask = 0x0F00, .handler = handlerFX33 },
+            .{ .opcode = 0xF055, .mask = 0x0F00, .handler = handlerFX55 },
+            .{ .opcode = 0xF065, .mask = 0x0F00, .handler = handlerFX65 },
         };
 
         for (op_map) |op| {
@@ -314,6 +427,9 @@ const Cpu = struct {
 
     pub fn execute(self: *Cpu, ppu: *Ppu, handler: Handler, opcode: u16) void {
         handler(self, ppu, opcode);
+        if (self.can_inc_pc) {
+            self.pc += 2;
+        }
     }
 };
 
@@ -424,7 +540,7 @@ const Z8 = struct {
         for (0.., self.cpu.regs) |i, r| {
             std.debug.print("{x}={d} ", .{ i, r });
         }
-        std.debug.print("i={d} \n", .{self.cpu.i});
+        std.debug.print("i={d}\n", .{self.cpu.i});
         want_step = false;
     }
 
@@ -461,6 +577,13 @@ fn init(
 
     const init_flags: sdl3.InitFlags = .{ .video = true };
     try sdl3.init(init_flags);
+
+    var prng = std.Random.DefaultPrng.init(blk: {
+        var seed: u64 = undefined;
+        try std.posix.getrandom(std.mem.asBytes(&seed));
+        break :blk seed;
+    });
+    rand = prng.random();
 
     const win_and_rend = try sdl3.render.Renderer.initWithWindow(
         "z8",
@@ -514,7 +637,6 @@ fn event(
     app_state: *AppState,
     curr_event: sdl3.events.Event,
 ) !sdl3.AppResult {
-    _ = app_state;
     var result: sdl3.AppResult = .run;
 
     switch (curr_event) {
@@ -533,7 +655,57 @@ fn event(
                     .return_key => {
                         want_step = true;
                     },
-                    else => {},
+                    .kp_0 => {
+                        app_state.z8.cpu.pressed = 0x0;
+                    },
+                    .kp_1 => {
+                        app_state.z8.cpu.pressed = 0x1;
+                    },
+                    .kp_2 => {
+                        app_state.z8.cpu.pressed = 0x2;
+                    },
+                    .kp_3 => {
+                        app_state.z8.cpu.pressed = 0x3;
+                    },
+                    .kp_4 => {
+                        app_state.z8.cpu.pressed = 0x4;
+                    },
+                    .kp_5 => {
+                        app_state.z8.cpu.pressed = 0x5;
+                    },
+                    .kp_6 => {
+                        app_state.z8.cpu.pressed = 0x6;
+                    },
+                    .kp_7 => {
+                        app_state.z8.cpu.pressed = 0x7;
+                    },
+                    .kp_8 => {
+                        app_state.z8.cpu.pressed = 0x8;
+                    },
+                    .kp_9 => {
+                        app_state.z8.cpu.pressed = 0x9;
+                    },
+                    .a => {
+                        app_state.z8.cpu.pressed = 0xA;
+                    },
+                    .b => {
+                        app_state.z8.cpu.pressed = 0xB;
+                    },
+                    .c => {
+                        app_state.z8.cpu.pressed = 0xC;
+                    },
+                    .d => {
+                        app_state.z8.cpu.pressed = 0xD;
+                    },
+                    .e => {
+                        app_state.z8.cpu.pressed = 0xE;
+                    },
+                    .f => {
+                        app_state.z8.cpu.pressed = 0xF;
+                    },
+                    else => {
+                        app_state.z8.cpu.pressed = null;
+                    },
                 }
             }
         },
