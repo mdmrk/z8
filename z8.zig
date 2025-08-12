@@ -63,7 +63,7 @@ fn handler1NNN(cpu: *Cpu, _: *Ppu, opcode: u16) void {
 
 fn handler2NNN(cpu: *Cpu, _: *Ppu, opcode: u16) void {
     const nnn: u16 = @truncate(opcode & 0x0FFF);
-    if (cpu.sp == std.math.maxInt(@TypeOf(cpu.sp))) {
+    if (cpu.sp == cpu.stack.len - 1) {
         std.log.err("Stack overflow", .{});
         return;
     }
@@ -565,6 +565,11 @@ fn init(
     app_state: *?*AppState,
     _: [][*:0]u8,
 ) !sdl3.AppResult {
+    errdefer |err| {
+        if (err == error.SdlError) {
+            std.log.err("{?s}\n", .{sdl3.errors.get()});
+        }
+    }
     try parseArgs();
 
     if (args.help) {
@@ -585,8 +590,9 @@ fn init(
     });
     rand = prng.random();
 
+    const window_title = try std.fmt.allocPrint(alloc, "z8 - {s}", .{args.rom_path.?});
     const win_and_rend = try sdl3.render.Renderer.initWithWindow(
-        "z8",
+        try alloc.dupeZ(u8, window_title),
         window_width,
         window_height,
         .{
