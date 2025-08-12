@@ -437,9 +437,19 @@ const Ppu = struct {
     const screen_width = 64;
     const screen_height = 32;
 
-    const PixelColor = enum(u8) {
-        unset = 0,
-        set = 255,
+    const PixelColor = struct {
+        var unset: sdl3.pixels.Color = .{
+            .r = 0,
+            .b = 255,
+            .g = 0,
+            .a = 255,
+        };
+        var set: sdl3.pixels.Color = .{
+            .r = 255,
+            .b = 156,
+            .g = 255,
+            .a = 255,
+        };
     };
 
     canvas: sdl3.render.Texture,
@@ -476,15 +486,15 @@ const Ppu = struct {
                 const idx = (i * Ppu.screen_width + j);
 
                 if (self.pixels[idx] == 1) {
-                    pixels[idx * pixel_size] = 255;
-                    pixels[idx * pixel_size + 1] = 255;
-                    pixels[idx * pixel_size + 2] = 255;
-                    pixels[idx * pixel_size + 3] = 255;
+                    pixels[idx * pixel_size] = Ppu.PixelColor.set.r;
+                    pixels[idx * pixel_size + 1] = Ppu.PixelColor.set.g;
+                    pixels[idx * pixel_size + 2] = Ppu.PixelColor.set.b;
+                    pixels[idx * pixel_size + 3] = Ppu.PixelColor.set.a;
                 } else {
-                    pixels[idx * pixel_size] = 0;
-                    pixels[idx * pixel_size + 1] = 0;
-                    pixels[idx * pixel_size + 2] = 0;
-                    pixels[idx * pixel_size + 3] = 255;
+                    pixels[idx * pixel_size] = Ppu.PixelColor.unset.r;
+                    pixels[idx * pixel_size + 1] = Ppu.PixelColor.unset.g;
+                    pixels[idx * pixel_size + 2] = Ppu.PixelColor.unset.b;
+                    pixels[idx * pixel_size + 3] = Ppu.PixelColor.unset.a;
                 }
             }
         }
@@ -631,7 +641,12 @@ fn iterate(
         app_state.z8.step();
     }
     try app_state.z8.ppu.draw();
-    try app_state.z8.renderer.setDrawColorFloat(.{ .r = 0, .b = 0, .g = 0, .a = 1 });
+    try app_state.z8.renderer.setDrawColorFloat(.{
+        .r = @as(f32, @floatFromInt(Ppu.PixelColor.unset.r)) / 255,
+        .g = @as(f32, @floatFromInt(Ppu.PixelColor.unset.g)) / 255,
+        .b = @as(f32, @floatFromInt(Ppu.PixelColor.unset.b)) / 255,
+        .a = @as(f32, @floatFromInt(Ppu.PixelColor.unset.a)) / 255,
+    });
     try app_state.z8.renderer.clear();
     try app_state.z8.renderer.renderTexture(app_state.z8.ppu.canvas, null, null);
     try app_state.z8.renderer.present();
