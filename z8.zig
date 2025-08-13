@@ -33,10 +33,11 @@ fn parseArgs() !void {
 
 const Handler = *const fn (*Cpu, *Ppu, u16) void;
 
-const OpHandler = struct {
+const Op = struct {
     opcode: u16,
     mask: u16,
     handler: Handler,
+    inc_pc: bool,
 };
 
 fn handler0NNN(_: *Cpu, _: *Ppu, opcode: u16) void {
@@ -313,7 +314,7 @@ fn handlerFX55(cpu: *Cpu, _: *Ppu, opcode: u16) void {
 fn handlerFX65(cpu: *Cpu, _: *Ppu, opcode: u16) void {
     const vx: u16 = @truncate((opcode & 0x0F00) >> 8);
     for (0..vx + 1) |i| {
-        cpu.regs[i] = cpu.bus.read(u8, cpu.i);
+        cpu.regs[i] = cpu.bus.readu8(cpu.i);
     }
     cpu.i = cpu.i + vx + 1;
 }
@@ -329,8 +330,14 @@ const Bus = struct {
         };
     }
 
-    pub fn read(self: *const Bus, comptime T: type, addr: u16) T {
-        return @as(*T, @alignCast(@constCast(@ptrCast(self.mem[addr..])))).*;
+    pub fn readu8(self: *const Bus, addr: u16) u8 {
+        return self.mem[addr];
+    }
+
+    pub fn readu16(self: *const Bus, addr: u16) u16 {
+        const b1: u16 = @intCast(self.mem[addr]);
+        const b2: u16 = @intCast(self.mem[addr + 1]);
+        return (b2 << 8) | (b1);
     }
 
     pub fn write(self: *Bus, comptime T: type, addr: u16, value: T) void {
@@ -372,62 +379,62 @@ const Cpu = struct {
     }
 
     pub fn fetch(self: *Cpu) u16 {
-        const opcode_be = self.bus.read(u16, self.pc);
+        const opcode_be = self.bus.readu16(self.pc);
         const opcode = std.mem.bigToNative(u16, opcode_be);
         return opcode;
     }
 
-    pub fn decode(self: *const Cpu, opcode: u16) ?Handler {
-        const op_map = [_]OpHandler{
-            .{ .opcode = 0x00E0, .mask = 0x0000, .handler = handler00E0 },
-            .{ .opcode = 0x00EE, .mask = 0x0000, .handler = handler00EE },
-            .{ .opcode = 0x0000, .mask = 0x0FFF, .handler = handler0NNN },
-            .{ .opcode = 0x1000, .mask = 0x0FFF, .handler = handler1NNN },
-            .{ .opcode = 0x2000, .mask = 0x0FFF, .handler = handler2NNN },
-            .{ .opcode = 0x3000, .mask = 0x0FFF, .handler = handler3XNN },
-            .{ .opcode = 0x4000, .mask = 0x0FFF, .handler = handler4XNN },
-            .{ .opcode = 0x5000, .mask = 0x0FF0, .handler = handler5XY0 },
-            .{ .opcode = 0x6000, .mask = 0x0FFF, .handler = handler6XNN },
-            .{ .opcode = 0x7000, .mask = 0x0FFF, .handler = handler7XNN },
-            .{ .opcode = 0x8000, .mask = 0x0FF0, .handler = handler8XY0 },
-            .{ .opcode = 0x8001, .mask = 0x0FF0, .handler = handler8XY1 },
-            .{ .opcode = 0x8002, .mask = 0x0FF0, .handler = handler8XY2 },
-            .{ .opcode = 0x8003, .mask = 0x0FF0, .handler = handler8XY3 },
-            .{ .opcode = 0x8004, .mask = 0x0FF0, .handler = handler8XY4 },
-            .{ .opcode = 0x8005, .mask = 0x0FF0, .handler = handler8XY5 },
-            .{ .opcode = 0x8006, .mask = 0x0FF0, .handler = handler8XY6 },
-            .{ .opcode = 0x8007, .mask = 0x0FF0, .handler = handler8XY7 },
-            .{ .opcode = 0x800E, .mask = 0x0FF0, .handler = handler8XYE },
-            .{ .opcode = 0x9000, .mask = 0x0FF0, .handler = handler9XY0 },
-            .{ .opcode = 0xA000, .mask = 0x0FFF, .handler = handlerANNN },
-            .{ .opcode = 0xB000, .mask = 0x0FFF, .handler = handlerBNNN },
-            .{ .opcode = 0xC000, .mask = 0x0FFF, .handler = handlerCXNN },
-            .{ .opcode = 0xD000, .mask = 0x0FFF, .handler = handlerDXYN },
-            .{ .opcode = 0xE09E, .mask = 0x0F00, .handler = handlerEX9E },
-            .{ .opcode = 0xE0A1, .mask = 0x0F00, .handler = handlerEXA1 },
-            // .{ .opcode = 0xF007, .mask = 0x0F00, .handler = handlerFX07 },
-            .{ .opcode = 0xF00A, .mask = 0x0F00, .handler = handlerFX0A },
-            // .{ .opcode = 0xF015, .mask = 0x0F00, .handler = handlerFX15 },
-            // .{ .opcode = 0xF018, .mask = 0x0F00, .handler = handlerFX18 },
-            .{ .opcode = 0xF01E, .mask = 0x0F00, .handler = handlerFX1E },
-            // .{ .opcode = 0xF029, .mask = 0x0F00, .handler = handlerFX29 },
-            .{ .opcode = 0xF033, .mask = 0x0F00, .handler = handlerFX33 },
-            .{ .opcode = 0xF055, .mask = 0x0F00, .handler = handlerFX55 },
-            .{ .opcode = 0xF065, .mask = 0x0F00, .handler = handlerFX65 },
+    pub fn decode(self: *const Cpu, opcode: u16) ?Op {
+        const op_map = [_]Op{
+            .{ .opcode = 0x00E0, .mask = 0x0000, .handler = handler00E0, .inc_pc = true },
+            .{ .opcode = 0x00EE, .mask = 0x0000, .handler = handler00EE, .inc_pc = false },
+            .{ .opcode = 0x0000, .mask = 0x0FFF, .handler = handler0NNN, .inc_pc = true },
+            .{ .opcode = 0x1000, .mask = 0x0FFF, .handler = handler1NNN, .inc_pc = false },
+            .{ .opcode = 0x2000, .mask = 0x0FFF, .handler = handler2NNN, .inc_pc = true },
+            .{ .opcode = 0x3000, .mask = 0x0FFF, .handler = handler3XNN, .inc_pc = true },
+            .{ .opcode = 0x4000, .mask = 0x0FFF, .handler = handler4XNN, .inc_pc = true },
+            .{ .opcode = 0x5000, .mask = 0x0FF0, .handler = handler5XY0, .inc_pc = true },
+            .{ .opcode = 0x6000, .mask = 0x0FFF, .handler = handler6XNN, .inc_pc = true },
+            .{ .opcode = 0x7000, .mask = 0x0FFF, .handler = handler7XNN, .inc_pc = true },
+            .{ .opcode = 0x8000, .mask = 0x0FF0, .handler = handler8XY0, .inc_pc = true },
+            .{ .opcode = 0x8001, .mask = 0x0FF0, .handler = handler8XY1, .inc_pc = true },
+            .{ .opcode = 0x8002, .mask = 0x0FF0, .handler = handler8XY2, .inc_pc = true },
+            .{ .opcode = 0x8003, .mask = 0x0FF0, .handler = handler8XY3, .inc_pc = true },
+            .{ .opcode = 0x8004, .mask = 0x0FF0, .handler = handler8XY4, .inc_pc = true },
+            .{ .opcode = 0x8005, .mask = 0x0FF0, .handler = handler8XY5, .inc_pc = true },
+            .{ .opcode = 0x8006, .mask = 0x0FF0, .handler = handler8XY6, .inc_pc = true },
+            .{ .opcode = 0x8007, .mask = 0x0FF0, .handler = handler8XY7, .inc_pc = true },
+            .{ .opcode = 0x800E, .mask = 0x0FF0, .handler = handler8XYE, .inc_pc = true },
+            .{ .opcode = 0x9000, .mask = 0x0FF0, .handler = handler9XY0, .inc_pc = true },
+            .{ .opcode = 0xA000, .mask = 0x0FFF, .handler = handlerANNN, .inc_pc = true },
+            .{ .opcode = 0xB000, .mask = 0x0FFF, .handler = handlerBNNN, .inc_pc = false },
+            .{ .opcode = 0xC000, .mask = 0x0FFF, .handler = handlerCXNN, .inc_pc = true },
+            .{ .opcode = 0xD000, .mask = 0x0FFF, .handler = handlerDXYN, .inc_pc = true },
+            .{ .opcode = 0xE09E, .mask = 0x0F00, .handler = handlerEX9E, .inc_pc = true },
+            .{ .opcode = 0xE0A1, .mask = 0x0F00, .handler = handlerEXA1, .inc_pc = true },
+            // .{ .opcode = 0xF007, .mask = 0x0F00, .handler = handlerFX07, .inc_pc = true },
+            .{ .opcode = 0xF00A, .mask = 0x0F00, .handler = handlerFX0A, .inc_pc = true },
+            // .{ .opcode = 0xF015, .mask = 0x0F00, .handler = handlerFX15, .inc_pc = true },
+            // .{ .opcode = 0xF018, .mask = 0x0F00, .handler = handlerFX18, .inc_pc = true },
+            .{ .opcode = 0xF01E, .mask = 0x0F00, .handler = handlerFX1E, .inc_pc = true },
+            // .{ .opcode = 0xF029, .mask = 0x0F00, .handler = handlerFX29, .inc_pc = true },
+            .{ .opcode = 0xF033, .mask = 0x0F00, .handler = handlerFX33, .inc_pc = true },
+            .{ .opcode = 0xF055, .mask = 0x0F00, .handler = handlerFX55, .inc_pc = true },
+            .{ .opcode = 0xF065, .mask = 0x0F00, .handler = handlerFX65, .inc_pc = true },
         };
 
         for (op_map) |op| {
             if (opcode & ~op.mask == op.opcode) {
                 std.log.debug("0x{x:0<4} cycles={}", .{ opcode, self.cycles });
-                return op.handler;
+                return op;
             }
         }
         return null;
     }
 
-    pub fn execute(self: *Cpu, ppu: *Ppu, handler: Handler, opcode: u16) void {
+    pub fn execute(self: *Cpu, ppu: *Ppu, handler: Handler, opcode: u16, inc_pc: bool) void {
         handler(self, ppu, opcode);
-        if (self.can_inc_pc) {
+        if (inc_pc and self.can_inc_pc) {
             self.pc += 2;
         }
     }
@@ -541,9 +548,9 @@ const Z8 = struct {
 
     pub fn step(self: *Z8) void {
         const opcode = self.cpu.fetch();
-        const handler = self.cpu.decode(opcode);
-        if (handler) |h| {
-            self.cpu.execute(&self.ppu, h, opcode);
+        const op = self.cpu.decode(opcode);
+        if (op) |o| {
+            self.cpu.execute(&self.ppu, o.handler, opcode, o.inc_pc);
         } else {
             std.log.warn("Invalid opcode 0x{x:0<4}", .{opcode});
         }
