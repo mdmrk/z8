@@ -387,10 +387,10 @@ const Cpu = struct {
     pub fn decode(self: *const Cpu, opcode: u16) ?Op {
         const op_map = [_]Op{
             .{ .opcode = 0x00E0, .mask = 0x0000, .handler = handler00E0, .inc_pc = true },
-            .{ .opcode = 0x00EE, .mask = 0x0000, .handler = handler00EE, .inc_pc = false },
+            .{ .opcode = 0x00EE, .mask = 0x0000, .handler = handler00EE, .inc_pc = true },
             .{ .opcode = 0x0000, .mask = 0x0FFF, .handler = handler0NNN, .inc_pc = true },
             .{ .opcode = 0x1000, .mask = 0x0FFF, .handler = handler1NNN, .inc_pc = false },
-            .{ .opcode = 0x2000, .mask = 0x0FFF, .handler = handler2NNN, .inc_pc = true },
+            .{ .opcode = 0x2000, .mask = 0x0FFF, .handler = handler2NNN, .inc_pc = false },
             .{ .opcode = 0x3000, .mask = 0x0FFF, .handler = handler3XNN, .inc_pc = true },
             .{ .opcode = 0x4000, .mask = 0x0FFF, .handler = handler4XNN, .inc_pc = true },
             .{ .opcode = 0x5000, .mask = 0x0FF0, .handler = handler5XY0, .inc_pc = true },
@@ -557,7 +557,7 @@ const Z8 = struct {
         for (0.., self.cpu.regs) |i, r| {
             std.debug.print("{x}={d} ", .{ i, r });
         }
-        std.debug.print("i={d}\n", .{self.cpu.i});
+        std.debug.print("i={d} pc={d}\n", .{ self.cpu.i, self.cpu.pc });
         want_step = false;
     }
 
