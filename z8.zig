@@ -378,13 +378,22 @@ const Cpu = struct {
         };
     }
 
+    pub fn decrementTimers(self: *Cpu) void {
+        if (self.delay_timer != 0) {
+            self.delay_timer -= 1;
+        }
+        if (self.sound_timer != 0) {
+            self.sound_timer -= 1;
+        }
+    }
+
     pub fn fetch(self: *Cpu) u16 {
         const opcode_be = self.bus.readu16(self.pc);
         const opcode = std.mem.bigToNative(u16, opcode_be);
         return opcode;
     }
 
-    pub fn decode(self: *const Cpu, opcode: u16) ?Op {
+    pub fn decode(_: *const Cpu, opcode: u16) ?Op {
         const op_map = [_]Op{
             .{ .opcode = 0x00E0, .mask = 0x0000, .handler = handler00E0, .inc_pc = true },
             .{ .opcode = 0x00EE, .mask = 0x0000, .handler = handler00EE, .inc_pc = true },
@@ -425,7 +434,6 @@ const Cpu = struct {
 
         for (op_map) |op| {
             if (opcode & ~op.mask == op.opcode) {
-                std.log.debug("0x{x:0<4} cycles={}", .{ opcode, self.cycles });
                 return op;
             }
         }
@@ -552,16 +560,18 @@ const Z8 = struct {
         } else {
             std.log.warn("Invalid opcode 0x{x:0<4}", .{opcode});
         }
+        std.debug.print("0x{x:0<4} cycles={} ", .{ opcode, self.cpu.cycles });
         for (0.., self.cpu.regs[0 .. self.cpu.regs.len - 1]) |i, r| {
-            std.debug.print("{x}={d} ", .{ i, r });
+            std.debug.print("{x}={d: <3} ", .{ i, r });
         }
-        std.debug.print("f={b:0<8} i={d} pc={d} pressed={?x}\n", .{
+        std.debug.print("f={b:0<8} i={d: <4} pc={d: <4} pressed={?x}\n", .{
             self.cpu.regs[0xF],
             self.cpu.i,
             self.cpu.pc,
             self.cpu.pressed,
         });
         want_step = false;
+        self.cpu.decrementTimers();
     }
 
     pub fn deinit(self: *Z8) void {
@@ -572,7 +582,7 @@ const Z8 = struct {
 };
 
 const alloc = std.heap.smp_allocator;
-const fps = 60;
+const fps = 120;
 const window_width = Ppu.screen_width * 10;
 const window_height = Ppu.screen_height * 10;
 
@@ -734,15 +744,14 @@ fn event(
                     .f => {
                         app_state.z8.cpu.pressed = 0xF;
                     },
-                    else => {
-                        app_state.z8.cpu.pressed = null;
-                    },
+                    else => {},
                 }
             }
         },
-        else => {
+        .key_up => {
             app_state.z8.cpu.pressed = null;
         },
+        else => {},
     }
     return result;
 }
