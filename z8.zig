@@ -111,42 +111,43 @@ fn handler7XNN(cpu: *Cpu, _: *Ppu, opcode: u16) void {
 
 fn handler8XY0(cpu: *Cpu, _: *Ppu, opcode: u16) void {
     const vx: u8 = @truncate((opcode & 0x0F00) >> 8);
-    const vy: u8 = @truncate((opcode & 0x00FF) >> 4);
+    const vy: u8 = @truncate((opcode & 0x00F0) >> 4);
     cpu.regs[vx] = cpu.regs[vy];
 }
 
 fn handler8XY1(cpu: *Cpu, _: *Ppu, opcode: u16) void {
     const vx: u8 = @truncate((opcode & 0x0F00) >> 8);
-    const vy: u8 = @truncate((opcode & 0x00FF) >> 4);
+    const vy: u8 = @truncate((opcode & 0x00F0) >> 4);
     cpu.regs[vx] |= cpu.regs[vy];
 }
 
 fn handler8XY2(cpu: *Cpu, _: *Ppu, opcode: u16) void {
     const vx: u8 = @truncate((opcode & 0x0F00) >> 8);
-    const vy: u8 = @truncate((opcode & 0x00FF) >> 4);
+    const vy: u8 = @truncate((opcode & 0x00F0) >> 4);
     cpu.regs[vx] &= cpu.regs[vy];
 }
 
 fn handler8XY3(cpu: *Cpu, _: *Ppu, opcode: u16) void {
     const vx: u8 = @truncate((opcode & 0x0F00) >> 8);
-    const vy: u8 = @truncate((opcode & 0x00FF) >> 4);
+    const vy: u8 = @truncate((opcode & 0x00F0) >> 4);
     cpu.regs[vx] ^= cpu.regs[vy];
 }
 
 fn handler8XY4(cpu: *Cpu, _: *Ppu, opcode: u16) void {
     const vx: u8 = @truncate((opcode & 0x0F00) >> 8);
-    const vy: u8 = @truncate((opcode & 0x00FF) >> 4);
-    if ((vx +% vy) < vx or (vx +% vy) < vy) {
+    const vy: u8 = @truncate((opcode & 0x00F0) >> 4);
+    const sum = (@as(u16, @intCast(cpu.regs[vx])) + @as(u16, @intCast(cpu.regs[vy])));
+    if (sum > 255) {
         cpu.regs[0xF] = 1;
     } else {
         cpu.regs[0xF] = 0;
     }
-    cpu.regs[vx] +%= cpu.regs[vy];
+    cpu.regs[vx] = @truncate(sum);
 }
 
 fn handler8XY5(cpu: *Cpu, _: *Ppu, opcode: u16) void {
     const vx: u8 = @truncate((opcode & 0x0F00) >> 8);
-    const vy: u8 = @truncate((opcode & 0x00FF) >> 4);
+    const vy: u8 = @truncate((opcode & 0x00F0) >> 4);
     if (cpu.regs[vx] > cpu.regs[vy]) {
         cpu.regs[0xF] = 1;
     } else {
@@ -157,15 +158,15 @@ fn handler8XY5(cpu: *Cpu, _: *Ppu, opcode: u16) void {
 
 fn handler8XY6(cpu: *Cpu, _: *Ppu, opcode: u16) void {
     const vx: u8 = @truncate((opcode & 0x0F00) >> 8);
-    const vy: u8 = @truncate((opcode & 0x00FF) >> 4);
+    const vy: u8 = @truncate((opcode & 0x00F0) >> 4);
     cpu.regs[0xF] = cpu.regs[vy] & 1;
     cpu.regs[vx] = cpu.regs[vy] >> 1;
 }
 
 fn handler8XY7(cpu: *Cpu, _: *Ppu, opcode: u16) void {
     const vx: u8 = @truncate((opcode & 0x0F00) >> 8);
-    const vy: u8 = @truncate((opcode & 0x00FF) >> 4);
-    if (cpu.regs[vx] > cpu.regs[vy]) {
+    const vy: u8 = @truncate((opcode & 0x00F0) >> 4);
+    if (cpu.regs[vy] > cpu.regs[vx]) {
         cpu.regs[0xF] = 1;
     } else {
         cpu.regs[0xF] = 0;
@@ -175,7 +176,7 @@ fn handler8XY7(cpu: *Cpu, _: *Ppu, opcode: u16) void {
 
 fn handler8XYE(cpu: *Cpu, _: *Ppu, opcode: u16) void {
     const vx: u8 = @truncate((opcode & 0x0F00) >> 8);
-    const vy: u8 = @truncate((opcode & 0x00FF) >> 4);
+    const vy: u8 = @truncate((opcode & 0x00F0) >> 4);
     cpu.regs[0xF] = (cpu.regs[vy] >> 7) & 1;
     cpu.regs[vx] = cpu.regs[vy] << 1;
 }
@@ -195,12 +196,12 @@ fn handlerANNN(cpu: *Cpu, _: *Ppu, opcode: u16) void {
 
 fn handlerBNNN(cpu: *Cpu, _: *Ppu, opcode: u16) void {
     const nnn: u16 = @truncate(opcode & 0x0FFF);
-    cpu.i = nnn + cpu.regs[0];
+    cpu.pc = nnn + cpu.regs[0];
 }
 
 fn handlerCXNN(cpu: *Cpu, _: *Ppu, opcode: u16) void {
-    const nn: u8 = @truncate(opcode & 0x00FF);
     const vx: u8 = @truncate((opcode & 0x0F00) >> 8);
+    const nn: u8 = @truncate(opcode & 0x00FF);
     const random_n = rand.int(u8) & nn;
     cpu.regs[vx] = random_n;
 }
@@ -217,13 +218,13 @@ fn handlerDXYN(cpu: *Cpu, ppu: *Ppu, opcode: u16) void {
 
     cpu.regs[0xF] = 0;
     for (0..n) |y_offset| {
-        if (y_coord + y_offset >= Ppu.screen_height) continue;
+        const y = (y_coord + y_offset) % Ppu.screen_height;
 
         const sprite_byte = sprite_data[y_offset];
         for (0..sprite_width) |x_offset| {
-            if (x_coord + x_offset >= Ppu.screen_width) continue;
+            const x = (x_coord + x_offset) % Ppu.screen_width;
 
-            const screen_idx = ((y_coord + y_offset) * Ppu.screen_width) + (x_coord + x_offset);
+            const screen_idx = (y * Ppu.screen_width) + x;
             const sprite_pixel = (sprite_byte >> @as(u3, @intCast(7 - x_offset))) & 1;
 
             if (sprite_pixel == 1) {
@@ -256,7 +257,10 @@ fn handlerEXA1(cpu: *Cpu, _: *Ppu, opcode: u16) void {
     }
 }
 
-// fn handlerFX07(cpu: *Cpu, _: *Ppu, opcode: u16) void {}
+fn handlerFX07(cpu: *Cpu, _: *Ppu, opcode: u16) void {
+    const vx: u8 = @truncate((opcode & 0x0F00) >> 8);
+    cpu.regs[vx] = cpu.delay_timer;
+}
 
 fn handlerFX0A(cpu: *Cpu, _: *Ppu, opcode: u16) void {
     const vx: u8 = @truncate((opcode & 0x0F00) >> 8);
@@ -268,39 +272,31 @@ fn handlerFX0A(cpu: *Cpu, _: *Ppu, opcode: u16) void {
     }
 }
 
-// fn handlerFX15(cpu: *Cpu, _: *Ppu, opcode: u16) void {}
+fn handlerFX15(cpu: *Cpu, _: *Ppu, opcode: u16) void {
+    const vx: u8 = @truncate((opcode & 0x0F00) >> 8);
+    cpu.delay_timer = cpu.regs[vx];
+}
 
 // fn handlerFX18(cpu: *Cpu, _: *Ppu, opcode: u16) void {}
 
 fn handlerFX1E(cpu: *Cpu, _: *Ppu, opcode: u16) void {
     const vx: u8 = @truncate((opcode & 0x0F00) >> 8);
-    cpu.i +%= cpu.regs[vx];
+    const sum = cpu.i + cpu.regs[vx];
+    if (sum > 0x0FFF) {
+        cpu.regs[0xF] = 1;
+    } else {
+        cpu.regs[0xF] = 0;
+    }
+    cpu.i = sum;
 }
 
 // fn handlerFX29(cpu: *Cpu, _: *Ppu, opcode: u16) void {}
 
 fn handlerFX33(cpu: *Cpu, _: *Ppu, opcode: u16) void {
     const vx: u16 = @truncate((opcode & 0x0F00) >> 8);
-    const S = struct {
-        fn binToBCD(n: u8) u8 {
-            return switch (n) {
-                0 => 0b0000_0000,
-                1 => 0b0000_0001,
-                2 => 0b0000_0010,
-                3 => 0b0000_0011,
-                4 => 0b0000_0100,
-                5 => 0b0000_0101,
-                6 => 0b0000_0110,
-                7 => 0b0000_0111,
-                8 => 0b0000_1000,
-                9 => 0b0000_1001,
-                else => unreachable,
-            };
-        }
-    };
-    cpu.bus.write(u8, cpu.i + 2, S.binToBCD((cpu.regs[vx] / 100) % 10));
-    cpu.bus.write(u8, cpu.i + 1, S.binToBCD((cpu.regs[vx] / 10) % 10));
-    cpu.bus.write(u8, cpu.i + 0, S.binToBCD((cpu.regs[vx] / 1) % 10));
+    cpu.bus.write(u8, cpu.i + 0, cpu.regs[vx] / 100);
+    cpu.bus.write(u8, cpu.i + 1, (cpu.regs[vx] / 10) % 10);
+    cpu.bus.write(u8, cpu.i + 2, (cpu.regs[vx] / 1) % 10);
 }
 
 fn handlerFX55(cpu: *Cpu, _: *Ppu, opcode: u16) void {
@@ -314,7 +310,7 @@ fn handlerFX55(cpu: *Cpu, _: *Ppu, opcode: u16) void {
 fn handlerFX65(cpu: *Cpu, _: *Ppu, opcode: u16) void {
     const vx: u16 = @truncate((opcode & 0x0F00) >> 8);
     for (0..vx + 1) |i| {
-        cpu.regs[i] = cpu.bus.readu8(cpu.i);
+        cpu.regs[i] = cpu.bus.readu8(cpu.i + @as(u16, @intCast(i)));
     }
     cpu.i = cpu.i + vx + 1;
 }
@@ -363,6 +359,8 @@ const Cpu = struct {
     cycles: usize,
     pressed: ?u8,
     can_inc_pc: bool,
+    delay_timer: u8,
+    sound_timer: u8,
 
     pub fn init() Cpu {
         return .{
@@ -375,6 +373,8 @@ const Cpu = struct {
             .cycles = 0,
             .pressed = null,
             .can_inc_pc = true,
+            .delay_timer = 0,
+            .sound_timer = 0,
         };
     }
 
@@ -412,9 +412,9 @@ const Cpu = struct {
             .{ .opcode = 0xD000, .mask = 0x0FFF, .handler = handlerDXYN, .inc_pc = true },
             .{ .opcode = 0xE09E, .mask = 0x0F00, .handler = handlerEX9E, .inc_pc = true },
             .{ .opcode = 0xE0A1, .mask = 0x0F00, .handler = handlerEXA1, .inc_pc = true },
-            // .{ .opcode = 0xF007, .mask = 0x0F00, .handler = handlerFX07, .inc_pc = true },
+            .{ .opcode = 0xF007, .mask = 0x0F00, .handler = handlerFX07, .inc_pc = true },
             .{ .opcode = 0xF00A, .mask = 0x0F00, .handler = handlerFX0A, .inc_pc = true },
-            // .{ .opcode = 0xF015, .mask = 0x0F00, .handler = handlerFX15, .inc_pc = true },
+            .{ .opcode = 0xF015, .mask = 0x0F00, .handler = handlerFX15, .inc_pc = true },
             // .{ .opcode = 0xF018, .mask = 0x0F00, .handler = handlerFX18, .inc_pc = true },
             .{ .opcode = 0xF01E, .mask = 0x0F00, .handler = handlerFX1E, .inc_pc = true },
             // .{ .opcode = 0xF029, .mask = 0x0F00, .handler = handlerFX29, .inc_pc = true },
@@ -536,10 +536,8 @@ const Z8 = struct {
         const file = try std.fs.cwd().openFile(rom_path, .{ .mode = .read_only });
         defer file.close();
 
-        const end_addr = 0xE9F;
         const start_addr = 0x200;
-        const max_size = end_addr - start_addr;
-        const contents = try file.readToEndAlloc(self.alloc, max_size);
+        const contents = try file.readToEndAlloc(self.alloc, 8 * 1024 * 1024);
         defer self.alloc.free(contents);
 
         self.cpu.bus.writeMany(start_addr, contents);
@@ -554,10 +552,15 @@ const Z8 = struct {
         } else {
             std.log.warn("Invalid opcode 0x{x:0<4}", .{opcode});
         }
-        for (0.., self.cpu.regs) |i, r| {
+        for (0.., self.cpu.regs[0 .. self.cpu.regs.len - 1]) |i, r| {
             std.debug.print("{x}={d} ", .{ i, r });
         }
-        std.debug.print("i={d} pc={d}\n", .{ self.cpu.i, self.cpu.pc });
+        std.debug.print("f={b:0<8} i={d} pc={d} pressed={?x}\n", .{
+            self.cpu.regs[0xF],
+            self.cpu.i,
+            self.cpu.pc,
+            self.cpu.pressed,
+        });
         want_step = false;
     }
 
@@ -683,34 +686,34 @@ fn event(
                     .return_key => {
                         want_step = true;
                     },
-                    .kp_0 => {
+                    .zero => {
                         app_state.z8.cpu.pressed = 0x0;
                     },
-                    .kp_1 => {
+                    .one => {
                         app_state.z8.cpu.pressed = 0x1;
                     },
-                    .kp_2 => {
+                    .two => {
                         app_state.z8.cpu.pressed = 0x2;
                     },
-                    .kp_3 => {
+                    .three => {
                         app_state.z8.cpu.pressed = 0x3;
                     },
-                    .kp_4 => {
+                    .four => {
                         app_state.z8.cpu.pressed = 0x4;
                     },
-                    .kp_5 => {
+                    .five => {
                         app_state.z8.cpu.pressed = 0x5;
                     },
-                    .kp_6 => {
+                    .six => {
                         app_state.z8.cpu.pressed = 0x6;
                     },
-                    .kp_7 => {
+                    .seven => {
                         app_state.z8.cpu.pressed = 0x7;
                     },
-                    .kp_8 => {
+                    .eight => {
                         app_state.z8.cpu.pressed = 0x8;
                     },
-                    .kp_9 => {
+                    .nine => {
                         app_state.z8.cpu.pressed = 0x9;
                     },
                     .a => {
@@ -737,7 +740,9 @@ fn event(
                 }
             }
         },
-        else => {},
+        else => {
+            app_state.z8.cpu.pressed = null;
+        },
     }
     return result;
 }
