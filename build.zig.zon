@@ -5,7 +5,8 @@
     .minimum_zig_version = "0.15.0-dev.1427+3de8bbd3d",
     .dependencies = .{
         .sdl3 = .{
-            .path = "./zig-sdl3",
+            .url = "git+https://github.com/Gota7/zig-sdl3?ref=zig-master#b71eec49689b833aae44ee7835e4ae414be5ca12",
+            .hash = "sdl3-0.0.1-NmT1Q9eYIADHjf5RQhYK67Kmr9FLiY4PKvlDaTv9-NbA",
         },
     },
     .paths = .{

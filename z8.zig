@@ -40,8 +40,15 @@ const Op = struct {
     inc_pc: bool,
 };
 
-fn handler0NNN(_: *Cpu, _: *Ppu, opcode: u16) void {
-    _ = opcode;
+fn handler0NNN(cpu: *Cpu, _: *Ppu, opcode: u16) void {
+    const nnn: u16 = @truncate(opcode & 0x0FFF);
+    if (cpu.sp == cpu.stack.len - 1) {
+        std.log.err("Stack overflow", .{});
+        return;
+    }
+    cpu.stack[cpu.sp] = cpu.pc;
+    cpu.sp += 1;
+    cpu.pc = nnn;
 }
 
 fn handler00E0(_: *Cpu, ppu: *Ppu, _: u16) void {
@@ -148,7 +155,7 @@ fn handler8XY4(cpu: *Cpu, _: *Ppu, opcode: u16) void {
 fn handler8XY5(cpu: *Cpu, _: *Ppu, opcode: u16) void {
     const vx: u8 = @truncate((opcode & 0x0F00) >> 8);
     const vy: u8 = @truncate((opcode & 0x00F0) >> 4);
-    if (cpu.regs[vx] > cpu.regs[vy]) {
+    if (cpu.regs[vx] >= cpu.regs[vy]) {
         cpu.regs[0xF] = 1;
     } else {
         cpu.regs[0xF] = 0;
@@ -337,7 +344,7 @@ const Bus = struct {
     }
 
     pub fn write(self: *Bus, comptime T: type, addr: u16, value: T) void {
-        @as(*T, @alignCast(@constCast(@ptrCast(self.mem[addr..])))).* = value;
+        @as(*T, @ptrCast(@alignCast(@constCast(self.mem[addr..])))).* = value;
     }
 
     pub fn writeMany(self: *Bus, addr: u16, slice: []const u8) void {
@@ -454,7 +461,7 @@ const Ppu = struct {
 
     const PixelColor = struct {
         var unset: sdl3.pixels.Color = .{
-            .r = 0,
+            .r = 100,
             .b = 255,
             .g = 0,
             .a = 255,
@@ -558,13 +565,13 @@ const Z8 = struct {
         if (op) |o| {
             self.cpu.execute(&self.ppu, o.handler, opcode, o.inc_pc);
         } else {
-            std.log.warn("Invalid opcode 0x{x:0<4}", .{opcode});
+            std.log.warn("Invalid opcode 0x{x:0>4}", .{opcode});
         }
         std.debug.print("0x{x:0<4} cycles={} ", .{ opcode, self.cpu.cycles });
         for (0.., self.cpu.regs[0 .. self.cpu.regs.len - 1]) |i, r| {
             std.debug.print("{x}={d: <3} ", .{ i, r });
         }
-        std.debug.print("f={b:0<8} i={d: <4} pc={d: <4} pressed={?x}\n", .{
+        std.debug.print("f={b:0>8} i={d: <4} pc={d: <4} pressed={?x}\n", .{
             self.cpu.regs[0xF],
             self.cpu.i,
             self.cpu.pc,
@@ -649,9 +656,10 @@ fn init(
 }
 
 fn iterate(
-    app_state: *AppState,
+    state: ?*AppState,
 ) !sdl3.AppResult {
-    _ = app_state.fps_capper.delay();
+    // _ = app_state.fps_capper.delay();
+    const app_state = state.?;
 
     if (args.step) {
         if (want_step) {
@@ -675,9 +683,10 @@ fn iterate(
 }
 
 fn event(
-    app_state: *AppState,
+    state: ?*AppState,
     curr_event: sdl3.events.Event,
 ) !sdl3.AppResult {
+    const app_state = state.?;
     var result: sdl3.AppResult = .run;
 
     switch (curr_event) {
