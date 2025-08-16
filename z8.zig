@@ -246,20 +246,14 @@ fn handlerDXYN(cpu: *Cpu, ppu: *Ppu, opcode: u16) void {
 
 fn handlerEX9E(cpu: *Cpu, _: *Ppu, opcode: u16) void {
     const vx: u8 = @truncate((opcode & 0x0F00) >> 8);
-    if (cpu.pressed) |pressed| {
-        if (cpu.regs[vx] == pressed) {
-            cpu.pc += 2;
-        }
+    if (cpu.pressed[cpu.regs[vx]]) {
+        cpu.pc += 2;
     }
 }
 
 fn handlerEXA1(cpu: *Cpu, _: *Ppu, opcode: u16) void {
     const vx: u8 = @truncate((opcode & 0x0F00) >> 8);
-    if (cpu.pressed) |pressed| {
-        if (cpu.regs[vx] != pressed) {
-            cpu.pc += 2;
-        }
-    } else {
+    if (!cpu.pressed[cpu.regs[vx]]) {
         cpu.pc += 2;
     }
 }
@@ -271,12 +265,14 @@ fn handlerFX07(cpu: *Cpu, _: *Ppu, opcode: u16) void {
 
 fn handlerFX0A(cpu: *Cpu, _: *Ppu, opcode: u16) void {
     const vx: u8 = @truncate((opcode & 0x0F00) >> 8);
-    if (cpu.pressed) |pressed| {
-        cpu.regs[vx] = pressed;
-        cpu.can_inc_pc = true;
-    } else {
-        cpu.can_inc_pc = false;
+    for (cpu.pressed, 0..) |pressed, i| {
+        if (pressed) {
+            cpu.regs[vx] = @as(u8, @intCast(i));
+            cpu.can_inc_pc = true;
+            return;
+        }
     }
+    cpu.can_inc_pc = false;
 }
 
 fn handlerFX15(cpu: *Cpu, _: *Ppu, opcode: u16) void {
@@ -364,7 +360,7 @@ const Cpu = struct {
     i: u16,
     bus: Bus,
     cycles: usize,
-    pressed: ?u8,
+    pressed: [16]bool,
     can_inc_pc: bool,
     delay_timer: u8,
     sound_timer: u8,
@@ -378,7 +374,7 @@ const Cpu = struct {
             .i = 0,
             .bus = Bus.init(),
             .cycles = 0,
-            .pressed = null,
+            .pressed = [_]bool{false} ** 16,
             .can_inc_pc = true,
             .delay_timer = 0,
             .sound_timer = 0,
@@ -571,12 +567,15 @@ const Z8 = struct {
         for (0.., self.cpu.regs[0 .. self.cpu.regs.len - 1]) |i, r| {
             std.debug.print("{x}={d: <3} ", .{ i, r });
         }
-        std.debug.print("f={b:0>8} i={d: <4} pc={d: <4} pressed={?x}\n", .{
+        std.debug.print("f={b:0>8} i={d: <4} pc={d: <4} ", .{
             self.cpu.regs[0xF],
             self.cpu.i,
             self.cpu.pc,
-            self.cpu.pressed,
         });
+        for (self.cpu.pressed) |p| {
+            std.debug.print("{},", .{p});
+        }
+        std.debug.print("\n", .{});
         want_step = false;
         self.cpu.decrementTimers();
     }
@@ -589,7 +588,7 @@ const Z8 = struct {
 };
 
 const alloc = std.heap.smp_allocator;
-const fps = 120;
+const fps = 60;
 const window_width = Ppu.screen_width * 10;
 const window_height = Ppu.screen_height * 10;
 
@@ -705,60 +704,57 @@ fn event(
                     .return_key => {
                         want_step = true;
                     },
-                    .zero => {
-                        app_state.z8.cpu.pressed = 0x0;
-                    },
-                    .one => {
-                        app_state.z8.cpu.pressed = 0x1;
-                    },
-                    .two => {
-                        app_state.z8.cpu.pressed = 0x2;
-                    },
-                    .three => {
-                        app_state.z8.cpu.pressed = 0x3;
-                    },
-                    .four => {
-                        app_state.z8.cpu.pressed = 0x4;
-                    },
-                    .five => {
-                        app_state.z8.cpu.pressed = 0x5;
-                    },
-                    .six => {
-                        app_state.z8.cpu.pressed = 0x6;
-                    },
-                    .seven => {
-                        app_state.z8.cpu.pressed = 0x7;
-                    },
-                    .eight => {
-                        app_state.z8.cpu.pressed = 0x8;
-                    },
-                    .nine => {
-                        app_state.z8.cpu.pressed = 0x9;
-                    },
-                    .a => {
-                        app_state.z8.cpu.pressed = 0xA;
-                    },
-                    .b => {
-                        app_state.z8.cpu.pressed = 0xB;
-                    },
-                    .c => {
-                        app_state.z8.cpu.pressed = 0xC;
-                    },
-                    .d => {
-                        app_state.z8.cpu.pressed = 0xD;
-                    },
-                    .e => {
-                        app_state.z8.cpu.pressed = 0xE;
-                    },
-                    .f => {
-                        app_state.z8.cpu.pressed = 0xF;
-                    },
                     else => {},
+                }
+                const keyboard_input: ?u8 = switch (key) {
+                    .zero => 0x0,
+                    .one => 0x1,
+                    .two => 0x2,
+                    .three => 0x3,
+                    .four => 0x4,
+                    .five => 0x5,
+                    .six => 0x6,
+                    .seven => 0x7,
+                    .eight => 0x8,
+                    .nine => 0x9,
+                    .a => 0xA,
+                    .b => 0xB,
+                    .c => 0xC,
+                    .d => 0xD,
+                    .e => 0xE,
+                    .f => 0xF,
+                    else => null,
+                };
+                if (keyboard_input) |input| {
+                    app_state.z8.cpu.pressed[input] = true;
                 }
             }
         },
-        .key_up => {
-            app_state.z8.cpu.pressed = null;
+        .key_up => |keyboard| {
+            if (keyboard.key) |key| {
+                const keyboard_input: ?u8 = switch (key) {
+                    .zero => 0x0,
+                    .one => 0x1,
+                    .two => 0x2,
+                    .three => 0x3,
+                    .four => 0x4,
+                    .five => 0x5,
+                    .six => 0x6,
+                    .seven => 0x7,
+                    .eight => 0x8,
+                    .nine => 0x9,
+                    .a => 0xA,
+                    .b => 0xB,
+                    .c => 0xC,
+                    .d => 0xD,
+                    .e => 0xE,
+                    .f => 0xF,
+                    else => null,
+                };
+                if (keyboard_input) |input| {
+                    app_state.z8.cpu.pressed[input] = false;
+                }
+            }
         },
         else => {},
     }
