@@ -1,4 +1,7 @@
 const std = @import("std");
+const alloc = std.heap.smp_allocator;
+const builtin = @import("builtin");
+
 const sdl3 = @import("sdl3");
 
 var args: struct {
@@ -490,19 +493,10 @@ const Ppu = struct {
         };
     };
 
-    canvas: sdl3.render.Texture,
+    canvas: *sdl3.render.Texture,
     pixels: [screen_height * screen_width]u8,
 
-    pub fn init(renderer: sdl3.render.Renderer) !Ppu {
-        const canvas = try sdl3.render.Texture.init(
-            renderer,
-            .packed_rgba_8_8_8_8,
-            .streaming,
-            Ppu.screen_width,
-            Ppu.screen_height,
-        );
-        try canvas.setScaleMode(.nearest);
-
+    pub fn init(canvas: *sdl3.render.Texture) !Ppu {
         return .{
             .canvas = canvas,
             .pixels = .{0} ** (Ppu.screen_width * Ppu.screen_height),
@@ -537,29 +531,32 @@ const Ppu = struct {
             }
         }
     }
-
-    pub fn deinit(self: *Ppu) void {
-        self.canvas.deinit();
-    }
 };
+
+fn loadZ8(state: *AppState, rom_path: []const u8) void {
+    if (state.z8) |*z8| {
+        z8.deinit();
+    }
+    state.z8 = Z8.init(&state.canvas) catch |err| {
+        std.log.err("Cannot init {s} ({any})", .{ rom_path, err });
+    };
+    state.z8.?.loadRom(rom_path) catch |err| {
+        std.log.err("Cannot load {s} ({any})", .{ rom_path, err });
+    };
+}
 
 const Z8 = struct {
     alloc: std.mem.Allocator,
     cpu: Cpu,
     ppu: Ppu,
-    window: sdl3.video.Window,
-    renderer: sdl3.render.Renderer,
 
     pub fn init(
-        window: sdl3.video.Window,
-        renderer: sdl3.render.Renderer,
+        canvas: *sdl3.render.Texture,
     ) !Z8 {
         return .{
             .alloc = alloc,
-            .ppu = try Ppu.init(renderer),
+            .ppu = try Ppu.init(canvas),
             .cpu = Cpu.init(),
-            .window = window,
-            .renderer = renderer,
         };
     }
 
@@ -587,39 +584,41 @@ const Z8 = struct {
         for (0.., self.cpu.regs[0 .. self.cpu.regs.len - 1]) |i, r| {
             std.debug.print("{x}={d: <3} ", .{ i, r });
         }
-        std.debug.print("f={b:0>8} i={d: <4} pc={d: <4} sp={d: <4}", .{
-            self.cpu.regs[0xF],
-            self.cpu.i,
-            self.cpu.pc,
-            self.cpu.sp,
-        });
-        for (self.cpu.pressed) |p| {
-            if (p) {
-                std.debug.print("1", .{});
-            } else {
-                std.debug.print("0", .{});
+        if (comptime builtin.mode != .ReleaseFast) {
+            std.debug.print("f={b:0>8} i={d: <4} pc={d: <4} sp={d: <4}", .{
+                self.cpu.regs[0xF],
+                self.cpu.i,
+                self.cpu.pc,
+                self.cpu.sp,
+            });
+            for (self.cpu.pressed) |p| {
+                if (p) {
+                    std.debug.print("1", .{});
+                } else {
+                    std.debug.print("0", .{});
+                }
             }
+            std.debug.print("\n{s}0123456789abcdef\n", .{[_]u8{' '} ** 139});
         }
-        std.debug.print("\n{s}0123456789abcdef\n", .{[_]u8{' '} ** 139});
         want_step = false;
         self.cpu.decrementTimers();
     }
 
     pub fn deinit(self: *Z8) void {
-        self.ppu.deinit();
-        self.renderer.deinit();
-        self.window.deinit();
+        _ = self;
     }
 };
 
-const alloc = std.heap.smp_allocator;
 const fps = 60;
 const window_width = Ppu.screen_width * 10;
 const window_height = Ppu.screen_height * 10;
 
 const AppState = struct {
     fps_capper: sdl3.extras.FramerateCapper(f32),
-    z8: Z8,
+    z8: ?Z8,
+    window: sdl3.video.Window,
+    renderer: sdl3.render.Renderer,
+    canvas: sdl3.render.Texture,
 };
 
 fn init(
@@ -636,10 +635,6 @@ fn init(
     if (args.help) {
         return .success;
     }
-    if (args.rom_path == null) {
-        std.log.err("Provide a rom path", .{});
-        return error.MissingRomPath;
-    }
 
     const init_flags: sdl3.InitFlags = .{ .video = true };
     try sdl3.init(init_flags);
@@ -651,7 +646,10 @@ fn init(
     });
     rand = prng.random();
 
-    const window_title = try std.fmt.allocPrint(alloc, "z8 - {s}", .{args.rom_path.?});
+    const window_title = if (args.rom_path) |rom_path|
+        try std.fmt.allocPrint(alloc, "z8 - {s}", .{rom_path})
+    else
+        "z8";
     const win_and_rend = try sdl3.render.Renderer.initWithWindow(
         try alloc.dupeZ(u8, window_title),
         window_width,
@@ -662,9 +660,14 @@ fn init(
     );
     const window = win_and_rend.window;
     const renderer = win_and_rend.renderer;
-
-    var z8 = try Z8.init(window, renderer);
-    try z8.loadRom(args.rom_path.?);
+    const canvas = try sdl3.render.Texture.init(
+        renderer,
+        .packed_rgba_8_8_8_8,
+        .streaming,
+        Ppu.screen_width,
+        Ppu.screen_height,
+    );
+    try canvas.setScaleMode(.nearest);
 
     const state = try alloc.create(AppState);
     state.* = .{
@@ -673,35 +676,65 @@ fn init(
                 .limited = fps,
             },
         },
-        .z8 = z8,
+        .z8 = null,
+        .window = window,
+        .renderer = renderer,
+        .canvas = canvas,
     };
     app_state.* = state;
+
+    if (args.rom_path) |rom_path| {
+        loadZ8(state, rom_path);
+    }
+
     return .run;
 }
 
 fn iterate(
     state: ?*AppState,
 ) !sdl3.AppResult {
+    errdefer |err| {
+        if (err == error.SdlError) {
+            std.log.err("{?s}\n", .{sdl3.errors.get()});
+        }
+    }
     const app_state = state.?;
     _ = app_state.fps_capper.delay();
 
-    if (args.step) {
-        if (want_step) {
-            app_state.z8.step();
-        }
-    } else {
-        app_state.z8.step();
-    }
-    try app_state.z8.ppu.prepareDraw();
-    try app_state.z8.renderer.setDrawColorFloat(.{
-        .r = @as(f32, @floatFromInt(Ppu.PixelColor.unset.r)) / 255,
-        .g = @as(f32, @floatFromInt(Ppu.PixelColor.unset.g)) / 255,
-        .b = @as(f32, @floatFromInt(Ppu.PixelColor.unset.b)) / 255,
-        .a = @as(f32, @floatFromInt(Ppu.PixelColor.unset.a)) / 255,
+    try app_state.renderer.setDrawColor(.{
+        .r = Ppu.PixelColor.unset.r,
+        .g = Ppu.PixelColor.unset.g,
+        .b = Ppu.PixelColor.unset.b,
+        .a = Ppu.PixelColor.unset.a,
     });
-    try app_state.z8.renderer.clear();
-    try app_state.z8.renderer.renderTexture(app_state.z8.ppu.canvas, null, null);
-    try app_state.z8.renderer.present();
+    if (app_state.z8) |*z8| {
+        if (args.step) {
+            if (want_step) {
+                z8.step();
+            }
+        } else {
+            z8.step();
+        }
+        try z8.ppu.prepareDraw();
+        try app_state.renderer.setDrawColor(.{
+            .r = Ppu.PixelColor.unset.r,
+            .g = Ppu.PixelColor.unset.g,
+            .b = Ppu.PixelColor.unset.b,
+            .a = Ppu.PixelColor.unset.a,
+        });
+        try app_state.renderer.clear();
+        try app_state.renderer.renderTexture(app_state.canvas, null, null);
+        try app_state.renderer.present();
+    } else {
+        try app_state.renderer.setDrawColor(.{
+            .r = 0,
+            .g = 0,
+            .b = 0,
+            .a = 0,
+        });
+        try app_state.renderer.clear();
+        try app_state.renderer.present();
+    }
 
     return .run;
 }
@@ -743,6 +776,10 @@ fn event(
         .terminating => {
             result = .success;
         },
+        .drop_file => |file| {
+            const file_path = file.file_name;
+            loadZ8(app_state, file_path);
+        },
         .key_down => |keyboard| {
             if (keyboard.key) |key| {
                 switch (key) {
@@ -754,17 +791,21 @@ fn event(
                     },
                     else => {},
                 }
-                const keyboard_input = S.keyToValue(key);
-                if (keyboard_input) |input| {
-                    app_state.z8.cpu.pressed[input] = true;
+                if (app_state.z8) |*z8| {
+                    const keyboard_input = S.keyToValue(key);
+                    if (keyboard_input) |input| {
+                        z8.cpu.pressed[input] = true;
+                    }
                 }
             }
         },
         .key_up => |keyboard| {
-            if (keyboard.key) |key| {
-                const keyboard_input = S.keyToValue(key);
-                if (keyboard_input) |input| {
-                    app_state.z8.cpu.pressed[input] = false;
+            if (app_state.z8) |*z8| {
+                if (keyboard.key) |key| {
+                    const keyboard_input = S.keyToValue(key);
+                    if (keyboard_input) |input| {
+                        z8.cpu.pressed[input] = false;
+                    }
                 }
             }
         },
@@ -778,7 +819,12 @@ fn quit(
     result: sdl3.AppResult,
 ) void {
     if (app_state) |state| {
-        state.z8.deinit();
+        if (state.z8) |*z8| {
+            z8.deinit();
+        }
+        state.canvas.deinit();
+        state.renderer.deinit();
+        state.window.deinit();
         alloc.destroy(state);
     }
     if (result == .success) {
