@@ -3,9 +3,11 @@ const alloc = std.heap.smp_allocator;
 const builtin = @import("builtin");
 
 const sdl3 = @import("sdl3");
+const z8_options = @import("z8_options");
 
 var args: struct {
     help: bool = false,
+    version: bool = false,
     step: bool = false,
     rom_path: ?[]const u8 = null,
 } = .{};
@@ -28,6 +30,8 @@ fn parseArgs() !void {
             args.help = true;
         } else if (S.checkArg(arg, "-s", "--step")) {
             args.step = true;
+        } else if (S.checkArg(arg, "-v", "--version")) {
+            args.version = true;
         } else {
             args.rom_path = arg;
         }
@@ -633,6 +637,21 @@ fn init(
     try parseArgs();
 
     if (args.help) {
+        std.debug.print(
+            \\z8 - CHIP-8 emulator
+            \\
+            \\Usage: z8 [rom] [options]
+            \\          
+            \\      Options:
+            \\          --step, -s   Step manually
+            \\          --version, -v   Print version string
+            \\          --help, -h      Print this message
+        , .{});
+        return .success;
+    }
+
+    if (args.version) {
+        std.debug.print("{s}\n", .{z8_options.version});
         return .success;
     }
 
@@ -816,7 +835,7 @@ fn event(
 
 fn quit(
     app_state: ?*AppState,
-    result: sdl3.AppResult,
+    _: sdl3.AppResult,
 ) void {
     if (app_state) |state| {
         if (state.z8) |*z8| {
@@ -826,9 +845,6 @@ fn quit(
         state.renderer.deinit();
         state.window.deinit();
         alloc.destroy(state);
-    }
-    if (result == .success) {
-        std.log.info("Application quit successfully", .{});
     }
 }
 

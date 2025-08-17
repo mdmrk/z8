@@ -1,0 +1,8 @@
+z8 - CHIP-8 emulator
+
+Usage: z8 [rom] [options]
+          
+      Options:
+          --step, -s   Step manually
+          --version, -v   Print version string
+          --help, -h      Print this message
