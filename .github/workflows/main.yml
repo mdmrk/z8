@@ -53,12 +53,31 @@ jobs:
         uses: mlugg/setup-zig@v2
         with:
           version: master
+      - name: Setup macOS SDK (macOS only)
+        if: matrix.target.os == 'macos' && runner.os == 'macOS'
+        run: |
+          # Ensure Xcode command line tools are available
+          sudo xcode-select --install 2>/dev/null || true
+          # Set SDK path for Zig
+          echo "ZIG_GLOBAL_CACHE_DIR=$HOME/.cache/zig" >> $GITHUB_ENV
+          echo "SDKROOT=$(xcrun --show-sdk-path)" >> $GITHUB_ENV
       - name: Build
         env:
           BUILD_DATE: ${{needs.build-info.outputs.date}}
           COMMIT_HASH: ${{needs.build-info.outputs.commit_hash}}
         run: |
-          zig build -Dtarget=${{ matrix.target.arch }}-${{ matrix.target.os }} -Doptimize=ReleaseSafe -Dcpu=baseline
+          if [[ "${{ matrix.target.os }}" == "macos" && "$RUNNER_OS" == "macOS" ]]; then
+            # Native build on macOS - don't specify target to avoid cross-compilation issues
+            if [[ "${{ matrix.target.arch }}" == "$(uname -m)" || ("${{ matrix.target.arch }}" == "aarch64" && "$(uname -m)" == "arm64") ]]; then
+              zig build -Doptimize=ReleaseSafe -Dcpu=baseline
+            else
+              # Cross-compile within macOS (e.g., x86_64 on arm64 or vice versa)
+              zig build -Dtarget=${{ matrix.target.arch }}-${{ matrix.target.os }} -Doptimize=ReleaseSafe -Dcpu=baseline
+            fi
+          else
+            # Cross-compile for other platforms
+            zig build -Dtarget=${{ matrix.target.arch }}-${{ matrix.target.os }} -Doptimize=ReleaseSafe -Dcpu=baseline
+          fi
         shell: bash
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
