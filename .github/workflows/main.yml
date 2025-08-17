@@ -23,29 +23,36 @@ jobs:
         run: |
           echo "date=$(date +'%Y%m%d')" >> "$GITHUB_OUTPUT"
           echo "commit_hash=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
-  build:
+  
+  build-windows:
+    needs: build-info
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: master
+      - name: Build
+        env:
+          BUILD_DATE: ${{needs.build-info.outputs.date}}
+          COMMIT_HASH: ${{needs.build-info.outputs.commit_hash}}
+        run: zig build -Doptimize=ReleaseSafe -Dcpu=baseline
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: z8-windows
+          path: zig-out/bin/z8.exe
+  
+  build-macos:
     needs: build-info
     strategy:
       matrix:
         include:
-          - target: { os: 'windows', arch: 'x86_64' }
-            runner: ubuntu-latest
-          - target: { os: 'windows', arch: 'x86' }
-            runner: ubuntu-latest
-          - target: { os: 'windows', arch: 'aarch64' }
-            runner: ubuntu-latest
-          - target: { os: 'macos', arch: 'x86_64' }
-            runner: macos-13
-          - target: { os: 'macos', arch: 'aarch64' }
-            runner: macos-latest
-          - target: { os: 'linux', arch: 'x86_64' }
-            runner: ubuntu-latest
-          - target: { os: 'linux', arch: 'x86' }
-            runner: ubuntu-latest
-          - target: { os: 'linux', arch: 'aarch64' }
-            runner: ubuntu-latest
-          - target: { os: 'linux', arch: 'riscv64' }
-            runner: ubuntu-latest
+          - runner: macos-13        # Intel
+            arch: x86_64
+          - runner: macos-latest    # ARM64
+            arch: aarch64
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
@@ -53,39 +60,43 @@ jobs:
         uses: mlugg/setup-zig@v2
         with:
           version: master
-      - name: Setup macOS SDK (macOS only)
-        if: matrix.target.os == 'macos' && runner.os == 'macOS'
+      - name: Setup macOS SDK
         run: |
-          # Ensure Xcode command line tools are available
-          sudo xcode-select --install 2>/dev/null || true
-          # Set SDK path for Zig
           echo "ZIG_GLOBAL_CACHE_DIR=$HOME/.cache/zig" >> $GITHUB_ENV
           echo "SDKROOT=$(xcrun --show-sdk-path)" >> $GITHUB_ENV
       - name: Build
         env:
           BUILD_DATE: ${{needs.build-info.outputs.date}}
           COMMIT_HASH: ${{needs.build-info.outputs.commit_hash}}
-        run: |
-          if [[ "${{ matrix.target.os }}" == "macos" && "$RUNNER_OS" == "macOS" ]]; then
-            # Native build on macOS - don't specify target to avoid cross-compilation issues
-            if [[ "${{ matrix.target.arch }}" == "$(uname -m)" || ("${{ matrix.target.arch }}" == "aarch64" && "$(uname -m)" == "arm64") ]]; then
-              zig build -Doptimize=ReleaseSafe -Dcpu=baseline
-            else
-              # Cross-compile within macOS (e.g., x86_64 on arm64 or vice versa)
-              zig build -Dtarget=${{ matrix.target.arch }}-${{ matrix.target.os }} -Doptimize=ReleaseSafe -Dcpu=baseline
-            fi
-          else
-            # Cross-compile for other platforms
-            zig build -Dtarget=${{ matrix.target.arch }}-${{ matrix.target.os }} -Doptimize=ReleaseSafe -Dcpu=baseline
-          fi
-        shell: bash
+        run: zig build -Doptimize=ReleaseSafe -Dcpu=baseline
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: z8-${{ matrix.target.os }}-${{ matrix.target.arch }}
-          path: zig-out/bin/z8${{ matrix.target.os == 'windows' && '.exe' || '' }}
+          name: z8-macos-${{ matrix.arch }}
+          path: zig-out/bin/z8
+  
+  build-linux:
+    needs: build-info
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: master
+      - name: Build
+        env:
+          BUILD_DATE: ${{needs.build-info.outputs.date}}
+          COMMIT_HASH: ${{needs.build-info.outputs.commit_hash}}
+        run: zig build -Doptimize=ReleaseSafe -Dcpu=baseline
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: z8-linux
+          path: zig-out/bin/z8
+  
   release:
-    needs: [build-info, build]
+    needs: [build-info, build-windows, build-macos, build-linux]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
