@@ -25,20 +25,28 @@ jobs:
           echo "commit_hash=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
   build:
     needs: build-info
-    runs-on: ubuntu-latest
     strategy:
       matrix:
-        target: [
-          { os: 'windows', arch: 'x86_64' },
-          { os: 'windows', arch: 'x86' },
-          { os: 'windows', arch: 'aarch64' },
-          { os: 'macos', arch: 'x86_64' },
-          { os: 'macos', arch: 'aarch64' },
-          { os: 'linux', arch: 'x86_64' },
-          { os: 'linux', arch: 'x86' },
-          { os: 'linux', arch: 'aarch64' },
-          { os: 'linux', arch: 'riscv64' },
-        ]
+        include:
+          - target: { os: 'windows', arch: 'x86_64' }
+            runner: ubuntu-latest
+          - target: { os: 'windows', arch: 'x86' }
+            runner: ubuntu-latest
+          - target: { os: 'windows', arch: 'aarch64' }
+            runner: ubuntu-latest
+          - target: { os: 'macos', arch: 'x86_64' }
+            runner: macos-13
+          - target: { os: 'macos', arch: 'aarch64' }
+            runner: macos-latest
+          - target: { os: 'linux', arch: 'x86_64' }
+            runner: ubuntu-latest
+          - target: { os: 'linux', arch: 'x86' }
+            runner: ubuntu-latest
+          - target: { os: 'linux', arch: 'aarch64' }
+            runner: ubuntu-latest
+          - target: { os: 'linux', arch: 'riscv64' }
+            runner: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
       - name: Setup Zig
