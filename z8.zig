@@ -547,6 +547,13 @@ fn loadZ8(state: *AppState, rom_path: []const u8) void {
     state.z8.?.loadRom(rom_path) catch |err| {
         std.log.err("Cannot load {s} ({any})", .{ rom_path, err });
     };
+    const window_title = std.fmt.allocPrint(alloc, "z8 - {s}", .{rom_path}) catch return;
+    state.window.setTitle(
+        alloc.dupeZ(
+            u8,
+            window_title,
+        ) catch return,
+    ) catch {};
 }
 
 const Z8 = struct {
@@ -646,6 +653,7 @@ fn init(
             \\          --step, -s   Step manually
             \\          --version, -v   Print version string
             \\          --help, -h      Print this message
+            \\
         , .{});
         return .success;
     }
