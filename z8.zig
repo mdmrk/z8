@@ -43,8 +43,7 @@ const Op = struct {
 fn handler0NNN(cpu: *Cpu, _: *Ppu, opcode: u16) void {
     const nnn: u16 = @truncate(opcode & 0x0FFF);
     if (cpu.sp == cpu.stack.len - 1) {
-        std.log.err("Stack overflow", .{});
-        return;
+        @panic("Stack overflow");
     }
     cpu.stack[cpu.sp] = cpu.pc;
     cpu.sp += 1;
@@ -307,7 +306,10 @@ fn handlerFX1E(cpu: *Cpu, _: *Ppu, opcode: u16) void {
     cpu.i = sum;
 }
 
-// fn handlerFX29(cpu: *Cpu, _: *Ppu, opcode: u16) void {}
+fn handlerFX29(cpu: *Cpu, _: *Ppu, opcode: u16) void {
+    const vx: u8 = @truncate((opcode & 0x0F00) >> 8);
+    cpu.i = cpu.bus.readu8(@intCast(cpu.regs[vx]));
+}
 
 fn handlerFX33(cpu: *Cpu, _: *Ppu, opcode: u16) void {
     const vx: u16 = @truncate((opcode & 0x0F00) >> 8);
@@ -447,7 +449,7 @@ const Cpu = struct {
             .{ .opcode = 0xF015, .mask = 0x0F00, .handler = handlerFX15, .inc_pc = true },
             .{ .opcode = 0xF018, .mask = 0x0F00, .handler = handlerFX18, .inc_pc = true },
             .{ .opcode = 0xF01E, .mask = 0x0F00, .handler = handlerFX1E, .inc_pc = true },
-            // .{ .opcode = 0xF029, .mask = 0x0F00, .handler = handlerFX29, .inc_pc = true },
+            .{ .opcode = 0xF029, .mask = 0x0F00, .handler = handlerFX29, .inc_pc = true },
             .{ .opcode = 0xF033, .mask = 0x0F00, .handler = handlerFX33, .inc_pc = true },
             .{ .opcode = 0xF055, .mask = 0x0F00, .handler = handlerFX55, .inc_pc = true },
             .{ .opcode = 0xF065, .mask = 0x0F00, .handler = handlerFX65, .inc_pc = true },
@@ -511,7 +513,7 @@ const Ppu = struct {
         @memset(self.pixels[0..], 0);
     }
 
-    pub fn draw(self: *Ppu) !void {
+    pub fn prepareDraw(self: *Ppu) !void {
         const texture_data = try self.canvas.lock(null);
         defer self.canvas.unlock();
         const pixel_size = 4;
@@ -585,10 +587,11 @@ const Z8 = struct {
         for (0.., self.cpu.regs[0 .. self.cpu.regs.len - 1]) |i, r| {
             std.debug.print("{x}={d: <3} ", .{ i, r });
         }
-        std.debug.print("f={b:0>8} i={d: <4} pc={d: <4} ", .{
+        std.debug.print("f={b:0>8} i={d: <4} pc={d: <4} sp={d: <4}", .{
             self.cpu.regs[0xF],
             self.cpu.i,
             self.cpu.pc,
+            self.cpu.sp,
         });
         for (self.cpu.pressed) |p| {
             if (p) {
@@ -689,7 +692,7 @@ fn iterate(
     } else {
         app_state.z8.step();
     }
-    try app_state.z8.ppu.draw();
+    try app_state.z8.ppu.prepareDraw();
     try app_state.z8.renderer.setDrawColorFloat(.{
         .r = @as(f32, @floatFromInt(Ppu.PixelColor.unset.r)) / 255,
         .g = @as(f32, @floatFromInt(Ppu.PixelColor.unset.g)) / 255,
