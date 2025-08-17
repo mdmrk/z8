@@ -265,10 +265,21 @@ fn handlerFX07(cpu: *Cpu, _: *Ppu, opcode: u16) void {
 
 fn handlerFX0A(cpu: *Cpu, _: *Ppu, opcode: u16) void {
     const vx: u8 = @truncate((opcode & 0x0F00) >> 8);
+    if (cpu.waiting_for_key_release) {
+        if (!cpu.pressed[cpu.pressed_key]) {
+            cpu.can_inc_pc = true;
+            cpu.waiting_for_key_release = false;
+        } else {
+            cpu.can_inc_pc = false;
+        }
+        return;
+    }
     for (cpu.pressed, 0..) |pressed, i| {
         if (pressed) {
             cpu.regs[vx] = @as(u8, @intCast(i));
-            cpu.can_inc_pc = true;
+            cpu.pressed_key = @as(u8, @intCast(i));
+            cpu.can_inc_pc = false;
+            cpu.waiting_for_key_release = true;
             return;
         }
     }
@@ -361,7 +372,9 @@ const Cpu = struct {
     bus: Bus,
     cycles: usize,
     pressed: [16]bool,
+    pressed_key: u8,
     can_inc_pc: bool,
+    waiting_for_key_release: bool,
     delay_timer: u8,
     sound_timer: u8,
 
@@ -375,7 +388,9 @@ const Cpu = struct {
             .bus = Bus.init(),
             .cycles = 0,
             .pressed = [_]bool{false} ** 16,
+            .pressed_key = 0,
             .can_inc_pc = true,
+            .waiting_for_key_release = false,
             .delay_timer = 0,
             .sound_timer = 0,
         };
@@ -573,9 +588,13 @@ const Z8 = struct {
             self.cpu.pc,
         });
         for (self.cpu.pressed) |p| {
-            std.debug.print("{},", .{p});
+            if (p) {
+                std.debug.print("1", .{});
+            } else {
+                std.debug.print("0", .{});
+            }
         }
-        std.debug.print("\n", .{});
+        std.debug.print("\n{s}0123456789abcdef\n", .{[_]u8{' '} ** 132});
         want_step = false;
         self.cpu.decrementTimers();
     }
