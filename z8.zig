@@ -291,7 +291,10 @@ fn handlerFX15(cpu: *Cpu, _: *Ppu, opcode: u16) void {
     cpu.delay_timer = cpu.regs[vx];
 }
 
-// fn handlerFX18(cpu: *Cpu, _: *Ppu, opcode: u16) void {}
+fn handlerFX18(cpu: *Cpu, _: *Ppu, opcode: u16) void {
+    const vx: u8 = @truncate((opcode & 0x0F00) >> 8);
+    cpu.sound_timer = cpu.regs[vx];
+}
 
 fn handlerFX1E(cpu: *Cpu, _: *Ppu, opcode: u16) void {
     const vx: u8 = @truncate((opcode & 0x0F00) >> 8);
@@ -442,7 +445,7 @@ const Cpu = struct {
             .{ .opcode = 0xF007, .mask = 0x0F00, .handler = handlerFX07, .inc_pc = true },
             .{ .opcode = 0xF00A, .mask = 0x0F00, .handler = handlerFX0A, .inc_pc = true },
             .{ .opcode = 0xF015, .mask = 0x0F00, .handler = handlerFX15, .inc_pc = true },
-            // .{ .opcode = 0xF018, .mask = 0x0F00, .handler = handlerFX18, .inc_pc = true },
+            .{ .opcode = 0xF018, .mask = 0x0F00, .handler = handlerFX18, .inc_pc = true },
             .{ .opcode = 0xF01E, .mask = 0x0F00, .handler = handlerFX1E, .inc_pc = true },
             // .{ .opcode = 0xF029, .mask = 0x0F00, .handler = handlerFX29, .inc_pc = true },
             .{ .opcode = 0xF033, .mask = 0x0F00, .handler = handlerFX33, .inc_pc = true },
