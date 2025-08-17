@@ -600,7 +600,7 @@ const Z8 = struct {
                 std.debug.print("0", .{});
             }
         }
-        std.debug.print("\n{s}0123456789abcdef\n", .{[_]u8{' '} ** 132});
+        std.debug.print("\n{s}0123456789abcdef\n", .{[_]u8{' '} ** 139});
         want_step = false;
         self.cpu.decrementTimers();
     }
@@ -682,8 +682,8 @@ fn init(
 fn iterate(
     state: ?*AppState,
 ) !sdl3.AppResult {
-    // _ = app_state.fps_capper.delay();
     const app_state = state.?;
+    _ = app_state.fps_capper.delay();
 
     if (args.step) {
         if (want_step) {
@@ -712,6 +712,29 @@ fn event(
 ) !sdl3.AppResult {
     const app_state = state.?;
     var result: sdl3.AppResult = .run;
+    const S = struct {
+        fn keyToValue(key: sdl3.keycode.Keycode) ?u8 {
+            return switch (key) {
+                .zero => 0x0,
+                .one => 0x1,
+                .two => 0x2,
+                .three => 0x3,
+                .four => 0x4,
+                .five => 0x5,
+                .six => 0x6,
+                .seven => 0x7,
+                .eight => 0x8,
+                .nine => 0x9,
+                .a => 0xA,
+                .b => 0xB,
+                .c => 0xC,
+                .d => 0xD,
+                .e => 0xE,
+                .f => 0xF,
+                else => null,
+            };
+        }
+    };
 
     switch (curr_event) {
         .quit => {
@@ -731,25 +754,7 @@ fn event(
                     },
                     else => {},
                 }
-                const keyboard_input: ?u8 = switch (key) {
-                    .zero => 0x0,
-                    .one => 0x1,
-                    .two => 0x2,
-                    .three => 0x3,
-                    .four => 0x4,
-                    .five => 0x5,
-                    .six => 0x6,
-                    .seven => 0x7,
-                    .eight => 0x8,
-                    .nine => 0x9,
-                    .a => 0xA,
-                    .b => 0xB,
-                    .c => 0xC,
-                    .d => 0xD,
-                    .e => 0xE,
-                    .f => 0xF,
-                    else => null,
-                };
+                const keyboard_input = S.keyToValue(key);
                 if (keyboard_input) |input| {
                     app_state.z8.cpu.pressed[input] = true;
                 }
@@ -757,25 +762,7 @@ fn event(
         },
         .key_up => |keyboard| {
             if (keyboard.key) |key| {
-                const keyboard_input: ?u8 = switch (key) {
-                    .zero => 0x0,
-                    .one => 0x1,
-                    .two => 0x2,
-                    .three => 0x3,
-                    .four => 0x4,
-                    .five => 0x5,
-                    .six => 0x6,
-                    .seven => 0x7,
-                    .eight => 0x8,
-                    .nine => 0x9,
-                    .a => 0xA,
-                    .b => 0xB,
-                    .c => 0xC,
-                    .d => 0xD,
-                    .e => 0xE,
-                    .f => 0xF,
-                    else => null,
-                };
+                const keyboard_input = S.keyToValue(key);
                 if (keyboard_input) |input| {
                     app_state.z8.cpu.pressed[input] = false;
                 }
