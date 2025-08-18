@@ -650,7 +650,7 @@ fn init(
             \\Usage: z8 [rom] [options]
             \\          
             \\      Options:
-            \\          --step, -s   Step manually
+            \\          --step, -s      Step manually
             \\          --version, -v   Print version string
             \\          --help, -h      Print this message
             \\
