@@ -591,11 +591,11 @@ const Z8 = struct {
         } else {
             std.log.warn("Invalid opcode 0x{x:0>4}", .{opcode});
         }
-        std.debug.print("0x{x:0<4} cycles={} ", .{ opcode, self.cpu.cycles });
-        for (0.., self.cpu.regs[0 .. self.cpu.regs.len - 1]) |i, r| {
-            std.debug.print("{x}={d: <3} ", .{ i, r });
-        }
         if (comptime builtin.mode != .ReleaseFast) {
+            std.debug.print("0x{x:0<4} cycles={} ", .{ opcode, self.cpu.cycles });
+            for (0.., self.cpu.regs[0 .. self.cpu.regs.len - 1]) |i, r| {
+                std.debug.print("{x}={d: <3} ", .{ i, r });
+            }
             std.debug.print("f={b:0>8} i={d: <4} pc={d: <4} sp={d: <4}", .{
                 self.cpu.regs[0xF],
                 self.cpu.i,

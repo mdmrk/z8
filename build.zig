@@ -46,13 +46,6 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
         .c_sdl_preferred_linkage = .static,
-        .c_sdl_lto = @as(
-            std.zig.LtoMode,
-            switch (optimize) {
-                .ReleaseFast => .full,
-                else => .none,
-            },
-        ),
     });
     exe.root_module.addImport("sdl3", sdl3.module("sdl3"));
 
