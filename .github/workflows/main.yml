@@ -1,13 +1,25 @@
 name: ci
-
 on:
   push:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
-
 jobs:
+  build-info:
+    runs-on: ubuntu-latest
+    outputs:
+      date: ${{ steps.info.outputs.date }}
+      commit_hash: ${{ steps.info.outputs.commit_hash }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Get build info
+        id: info
+        shell: bash
+        run: |
+          echo "date=$(date +'%Y%m%d')" >> "$GITHUB_OUTPUT"
+          echo "commit_hash=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
   build:
+    needs: build-info
     name: build (${{ matrix.os }})
     strategy:
       fail-fast: false
@@ -17,12 +29,61 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
       - name: Set up Zig
         uses: mlugg/setup-zig@v2
         with:
           version: '0.15.1'
-
       - name: Build project
-        run: zig build
-
+        env:
+          BUILD_DATE: ${{needs.build-info.outputs.date}}
+          COMMIT_HASH: ${{needs.build-info.outputs.commit_hash}}
+        run: zig build -Doptimize=ReleaseFast -Dcpu=baseline
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: z8-${{ matrix.os }}
+          path: zig-out/bin/*
+  release:
+    needs: [build-info, build]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Prepare Release Files
+        run: |
+          cd artifacts
+          for dir in */; do
+            if [ -d "$dir" ]; then
+              (cd "$dir" && zip -r "../${dir%/}.zip" *)
+            fi
+          done
+      - name: Delete all existing releases
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          api_url="https://api.github.com/repos/${{ github.repository }}/releases"
+          
+          releases=$(curl -H "Authorization: token $GITHUB_TOKEN" "$api_url")
+          
+          echo "$releases" | jq -c '.[]' | while read -r release; do
+            release_id=$(echo "$release" | jq -r '.id')
+            release_tag=$(echo "$release" | jq -r '.tag_name')
+            
+            echo "Deleting release: $release_id with tag: $release_tag"
+            curl -X DELETE -H "Authorization: token $GITHUB_TOKEN" "$api_url/$release_id"
+            curl -X DELETE -H "Authorization: token $GITHUB_TOKEN" "https://api.github.com/repos/${{ github.repository }}/git/refs/tags/$release_tag"
+          done
+      - name: Create Release
+        uses: ncipollo/release-action@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          name: "z8-${{ needs.build-info.outputs.date }}-${{ needs.build-info.outputs.commit_hash }}"
+          tag: "z8-${{ needs.build-info.outputs.date }}-${{ needs.build-info.outputs.commit_hash }}"
+          draft: false
+          prerelease: false
+          artifacts: "artifacts/*.zip"
+          body: |
+            Automated release for z8
