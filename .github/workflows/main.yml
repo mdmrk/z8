@@ -37,7 +37,7 @@ jobs:
         env:
           BUILD_DATE: ${{needs.build-info.outputs.date}}
           COMMIT_HASH: ${{needs.build-info.outputs.commit_hash}}
-        run: zig build -Doptimize=ReleaseFast -Dcpu=baseline
+        run: zig build -Doptimize=ReleaseFast
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
