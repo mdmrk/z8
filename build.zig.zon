@@ -2,7 +2,7 @@
     .name = .z8,
     .version = "0.0.0",
     .fingerprint = 0xbc0b3b1d524a56fa,
-    .minimum_zig_version = "0.15.0-dev.1427+3de8bbd3d",
+    .minimum_zig_version = "0.15.1",
     .dependencies = .{
         .sdl3 = .{
             .url = "git+https://github.com/Gota7/zig-sdl3?ref=zig-master#b71eec49689b833aae44ee7835e4ae414be5ca12",
