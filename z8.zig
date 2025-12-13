@@ -8,10 +8,10 @@ const z8_options = @import("z8_options");
 var args: struct {
     help: bool = false,
     version: bool = false,
-    step: bool = false,
     rom_path: ?[]const u8 = null,
 } = .{};
 var want_step = true;
+var paused = false;
 var rand: std.Random = undefined;
 
 fn parseArgs() !void {
@@ -28,8 +28,6 @@ fn parseArgs() !void {
     while (args_it.next()) |arg| {
         if (S.checkArg(arg, "-h", "--help")) {
             args.help = true;
-        } else if (S.checkArg(arg, "-s", "--step")) {
-            args.step = true;
         } else if (S.checkArg(arg, "-v", "--version")) {
             args.version = true;
         } else {
@@ -41,7 +39,7 @@ fn parseArgs() !void {
 const Handler = *const fn (*Cpu, *Ppu, u16) void;
 
 const Op = struct {
-    opcode: u16,
+    id: u16,
     mask: u16,
     handler: Handler,
     inc_pc: bool,
@@ -424,50 +422,52 @@ const Cpu = struct {
     }
 
     pub fn decode(_: *const Cpu, opcode: u16) ?Op {
-        const op_map = [_]Op{
-            .{ .opcode = 0x00E0, .mask = 0x0000, .handler = handler00E0, .inc_pc = true },
-            .{ .opcode = 0x00EE, .mask = 0x0000, .handler = handler00EE, .inc_pc = true },
-            .{ .opcode = 0x0000, .mask = 0x0FFF, .handler = handler0NNN, .inc_pc = true },
-            .{ .opcode = 0x1000, .mask = 0x0FFF, .handler = handler1NNN, .inc_pc = false },
-            .{ .opcode = 0x2000, .mask = 0x0FFF, .handler = handler2NNN, .inc_pc = false },
-            .{ .opcode = 0x3000, .mask = 0x0FFF, .handler = handler3XNN, .inc_pc = true },
-            .{ .opcode = 0x4000, .mask = 0x0FFF, .handler = handler4XNN, .inc_pc = true },
-            .{ .opcode = 0x5000, .mask = 0x0FF0, .handler = handler5XY0, .inc_pc = true },
-            .{ .opcode = 0x6000, .mask = 0x0FFF, .handler = handler6XNN, .inc_pc = true },
-            .{ .opcode = 0x7000, .mask = 0x0FFF, .handler = handler7XNN, .inc_pc = true },
-            .{ .opcode = 0x8000, .mask = 0x0FF0, .handler = handler8XY0, .inc_pc = true },
-            .{ .opcode = 0x8001, .mask = 0x0FF0, .handler = handler8XY1, .inc_pc = true },
-            .{ .opcode = 0x8002, .mask = 0x0FF0, .handler = handler8XY2, .inc_pc = true },
-            .{ .opcode = 0x8003, .mask = 0x0FF0, .handler = handler8XY3, .inc_pc = true },
-            .{ .opcode = 0x8004, .mask = 0x0FF0, .handler = handler8XY4, .inc_pc = true },
-            .{ .opcode = 0x8005, .mask = 0x0FF0, .handler = handler8XY5, .inc_pc = true },
-            .{ .opcode = 0x8006, .mask = 0x0FF0, .handler = handler8XY6, .inc_pc = true },
-            .{ .opcode = 0x8007, .mask = 0x0FF0, .handler = handler8XY7, .inc_pc = true },
-            .{ .opcode = 0x800E, .mask = 0x0FF0, .handler = handler8XYE, .inc_pc = true },
-            .{ .opcode = 0x9000, .mask = 0x0FF0, .handler = handler9XY0, .inc_pc = true },
-            .{ .opcode = 0xA000, .mask = 0x0FFF, .handler = handlerANNN, .inc_pc = true },
-            .{ .opcode = 0xB000, .mask = 0x0FFF, .handler = handlerBNNN, .inc_pc = false },
-            .{ .opcode = 0xC000, .mask = 0x0FFF, .handler = handlerCXNN, .inc_pc = true },
-            .{ .opcode = 0xD000, .mask = 0x0FFF, .handler = handlerDXYN, .inc_pc = true },
-            .{ .opcode = 0xE09E, .mask = 0x0F00, .handler = handlerEX9E, .inc_pc = true },
-            .{ .opcode = 0xE0A1, .mask = 0x0F00, .handler = handlerEXA1, .inc_pc = true },
-            .{ .opcode = 0xF007, .mask = 0x0F00, .handler = handlerFX07, .inc_pc = true },
-            .{ .opcode = 0xF00A, .mask = 0x0F00, .handler = handlerFX0A, .inc_pc = true },
-            .{ .opcode = 0xF015, .mask = 0x0F00, .handler = handlerFX15, .inc_pc = true },
-            .{ .opcode = 0xF018, .mask = 0x0F00, .handler = handlerFX18, .inc_pc = true },
-            .{ .opcode = 0xF01E, .mask = 0x0F00, .handler = handlerFX1E, .inc_pc = true },
-            .{ .opcode = 0xF029, .mask = 0x0F00, .handler = handlerFX29, .inc_pc = true },
-            .{ .opcode = 0xF033, .mask = 0x0F00, .handler = handlerFX33, .inc_pc = true },
-            .{ .opcode = 0xF055, .mask = 0x0F00, .handler = handlerFX55, .inc_pc = true },
-            .{ .opcode = 0xF065, .mask = 0x0F00, .handler = handlerFX65, .inc_pc = true },
+        const OP_TABLE = [_]Op{
+            .{ .id = 0x00E0, .mask = 0xFFFF, .handler = handler00E0, .inc_pc = true },
+            .{ .id = 0x00EE, .mask = 0xFFFF, .handler = handler00EE, .inc_pc = true },
+            .{ .id = 0x0000, .mask = 0xF000, .handler = handler0NNN, .inc_pc = true },
+            .{ .id = 0x1000, .mask = 0xF000, .handler = handler1NNN, .inc_pc = false },
+            .{ .id = 0x2000, .mask = 0xF000, .handler = handler2NNN, .inc_pc = false },
+            .{ .id = 0x3000, .mask = 0xF000, .handler = handler3XNN, .inc_pc = true },
+            .{ .id = 0x4000, .mask = 0xF000, .handler = handler4XNN, .inc_pc = true },
+            .{ .id = 0x5000, .mask = 0xF00F, .handler = handler5XY0, .inc_pc = true },
+            .{ .id = 0x6000, .mask = 0xF000, .handler = handler6XNN, .inc_pc = true },
+            .{ .id = 0x7000, .mask = 0xF000, .handler = handler7XNN, .inc_pc = true },
+            .{ .id = 0x8000, .mask = 0xF00F, .handler = handler8XY0, .inc_pc = true },
+            .{ .id = 0x8001, .mask = 0xF00F, .handler = handler8XY1, .inc_pc = true },
+            .{ .id = 0x8002, .mask = 0xF00F, .handler = handler8XY2, .inc_pc = true },
+            .{ .id = 0x8003, .mask = 0xF00F, .handler = handler8XY3, .inc_pc = true },
+            .{ .id = 0x8004, .mask = 0xF00F, .handler = handler8XY4, .inc_pc = true },
+            .{ .id = 0x8005, .mask = 0xF00F, .handler = handler8XY5, .inc_pc = true },
+            .{ .id = 0x8006, .mask = 0xF00F, .handler = handler8XY6, .inc_pc = true },
+            .{ .id = 0x8007, .mask = 0xF00F, .handler = handler8XY7, .inc_pc = true },
+            .{ .id = 0x800E, .mask = 0xF00F, .handler = handler8XYE, .inc_pc = true },
+            .{ .id = 0x9000, .mask = 0xF00F, .handler = handler9XY0, .inc_pc = true },
+            .{ .id = 0xA000, .mask = 0xF000, .handler = handlerANNN, .inc_pc = true },
+            .{ .id = 0xB000, .mask = 0xF000, .handler = handlerBNNN, .inc_pc = false },
+            .{ .id = 0xC000, .mask = 0xF000, .handler = handlerCXNN, .inc_pc = true },
+            .{ .id = 0xD000, .mask = 0xF000, .handler = handlerDXYN, .inc_pc = true },
+            .{ .id = 0xE09E, .mask = 0xF0FF, .handler = handlerEX9E, .inc_pc = true },
+            .{ .id = 0xE0A1, .mask = 0xF0FF, .handler = handlerEXA1, .inc_pc = true },
+            .{ .id = 0xF007, .mask = 0xF0FF, .handler = handlerFX07, .inc_pc = true },
+            .{ .id = 0xF00A, .mask = 0xF0FF, .handler = handlerFX0A, .inc_pc = true },
+            .{ .id = 0xF015, .mask = 0xF0FF, .handler = handlerFX15, .inc_pc = true },
+            .{ .id = 0xF018, .mask = 0xF0FF, .handler = handlerFX18, .inc_pc = true },
+            .{ .id = 0xF01E, .mask = 0xF0FF, .handler = handlerFX1E, .inc_pc = true },
+            .{ .id = 0xF029, .mask = 0xF0FF, .handler = handlerFX29, .inc_pc = true },
+            .{ .id = 0xF033, .mask = 0xF0FF, .handler = handlerFX33, .inc_pc = true },
+            .{ .id = 0xF055, .mask = 0xF0FF, .handler = handlerFX55, .inc_pc = true },
+            .{ .id = 0xF065, .mask = 0xF0FF, .handler = handlerFX65, .inc_pc = true },
         };
 
-        for (op_map) |op| {
-            if (opcode & ~op.mask == op.opcode) {
-                return op;
+        var op: ?Op = null;
+        for (OP_TABLE) |def| {
+            if ((opcode & def.mask) == def.id) {
+                op = def;
+                break;
             }
         }
-        return null;
+        return op;
     }
 
     pub fn execute(self: *Cpu, ppu: *Ppu, handler: Handler, opcode: u16, inc_pc: bool) void {
@@ -512,10 +512,10 @@ const Ppu = struct {
     }
 
     pub fn prepareDraw(self: *Ppu) !void {
-        const texture_data = try self.canvas.lock(null);
+        const texture_data, _ = try self.canvas.lock(null);
         defer self.canvas.unlock();
         const pixel_size = 4;
-        const pixels = texture_data.pixels[0 .. Ppu.screen_width * Ppu.screen_height * pixel_size];
+        const pixels = texture_data[0 .. Ppu.screen_width * Ppu.screen_height * pixel_size];
 
         for (0..Ppu.screen_height) |i| {
             for (0..Ppu.screen_width) |j| {
@@ -685,8 +685,7 @@ fn init(
             .resizable = true,
         },
     );
-    const window = win_and_rend.window;
-    const renderer = win_and_rend.renderer;
+    const window, const renderer = win_and_rend;
     const canvas = try sdl3.render.Texture.init(
         renderer,
         .packed_rgba_8_8_8_8,
@@ -735,7 +734,7 @@ fn iterate(
         .a = Ppu.PixelColor.unset.a,
     });
     if (app_state.z8) |*z8| {
-        if (args.step) {
+        if (paused) {
             if (want_step) {
                 z8.step();
             }
@@ -815,6 +814,9 @@ fn event(
                     },
                     .return_key => {
                         want_step = true;
+                    },
+                    .space => {
+                        paused = !paused;
                     },
                     else => {},
                 }

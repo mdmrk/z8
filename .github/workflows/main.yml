@@ -1,9 +1,9 @@
 name: ci
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
 jobs:
   build-info:
     runs-on: ubuntu-latest
@@ -28,18 +28,18 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Set up Zig
         uses: mlugg/setup-zig@v2
         with:
-          version: '0.15.1'
+          version: "0.15.2"
       - name: Build project
         env:
           BUILD_DATE: ${{needs.build-info.outputs.date}}
           COMMIT_HASH: ${{needs.build-info.outputs.commit_hash}}
         run: zig build -Doptimize=ReleaseFast
       - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: z8-${{ matrix.os }}
           path: zig-out/bin/*
@@ -49,7 +49,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           path: artifacts
       - name: Prepare Release Files
@@ -65,9 +65,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           api_url="https://api.github.com/repos/${{ github.repository }}/releases"
-          
+
           releases=$(curl -H "Authorization: token $GITHUB_TOKEN" "$api_url")
-          
+
           echo "$releases" | jq -c '.[]' | while read -r release; do
             release_id=$(echo "$release" | jq -r '.id')
             release_tag=$(echo "$release" | jq -r '.tag_name')
