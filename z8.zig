@@ -177,7 +177,7 @@ fn handler8XY6(cpu: *Cpu, _: *Ppu, opcode: u16) void {
 fn handler8XY7(cpu: *Cpu, _: *Ppu, opcode: u16) void {
     const vx: u8 = @truncate((opcode & 0x0F00) >> 8);
     const vy: u8 = @truncate((opcode & 0x00F0) >> 4);
-    if (cpu.regs[vy] > cpu.regs[vx]) {
+    if (cpu.regs[vy] >= cpu.regs[vx]) {
         cpu.regs[0xF] = 1;
     } else {
         cpu.regs[0xF] = 0;
@@ -739,7 +739,9 @@ fn iterate(
                 z8.step();
             }
         } else {
-            z8.step();
+            for (0..10) |_| {
+                z8.step();
+            }
         }
         try z8.ppu.prepareDraw();
         try app_state.renderer.setDrawColor(.{
