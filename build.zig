@@ -34,6 +34,7 @@ pub fn build(b: *std.Build) !void {
             .root_source_file = b.path("z8.zig"),
             .target = target,
             .optimize = optimize,
+            .strip = true,
         }),
         .version = try std.SemanticVersion.parse(version),
         .use_llvm = true,
