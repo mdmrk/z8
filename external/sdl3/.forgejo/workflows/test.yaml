@@ -1,0 +1,62 @@
+name: test
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+permissions:
+  contents: read
+env:
+  ZIG_VERSION: 0.15.2
+concurrency:
+  group: "test"
+  cancel-in-progress: false
+jobs:
+  docs:
+    name: Build Documentation
+    runs-on: docker
+    steps:
+      - uses: actions/checkout@v3
+      - uses: https://codeberg.org/mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+      - name: Build Documentation Linux
+        run: zig build docs -Dtarget=x86_64-linux-gnu
+      - name: Build Documentation Windows
+        run: zig build docs -Dtarget=x86_64-windows
+  examples:
+    name: Build Examples
+    runs-on: docker
+    steps:
+      - uses: actions/checkout@v3
+      - uses: https://codeberg.org/mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+      - name: Build Examples Linux
+        run: zig build examples -Dtarget=x86_64-linux-gnu
+      - name: Build Examples Windows
+        run: zig build examples -Dtarget=x86_64-windows
+  template:
+    name: Build Template
+    runs-on: docker
+    steps:
+      - uses: actions/checkout@v3
+      - uses: https://codeberg.org/mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+      - name: Build Template Linux
+        run: cd template && zig build -Dtarget=x86_64-linux-gnu
+      - name: Build Template Windows
+        run: cd template && zig build -Dtarget=x86_64-windows
+  test:
+    name: Testing
+    runs-on: docker
+    steps:
+      - uses: actions/checkout@v3
+      - uses: https://codeberg.org/mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+      - name: Testing
+        run: zig build test -Dtarget=x86_64-linux-gnu

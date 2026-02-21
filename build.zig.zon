@@ -5,8 +5,7 @@
     .minimum_zig_version = "0.15.1",
     .dependencies = .{
         .sdl3 = .{
-            .url = "git+https://codeberg.org/7Games/zig-sdl3?ref=v0.1.7#318706d40fd56dbc67ad58a5a1be5c935ceb8585",
-            .hash = "sdl3-0.1.7-NmT1Q00HJwBQEXnwv_YWydIXUCKazlnPDACaXwwVQoHo",
+            .path = "external/sdl3",
         },
     },
     .paths = .{

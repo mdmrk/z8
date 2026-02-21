@@ -1,0 +1,33 @@
+name: docs
+on:
+  push:
+    branches:
+      - master
+permissions:
+  contents: read
+env:
+  ZIG_VERSION: 0.15.2
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+jobs:
+  docs:
+    name: Build & Deploy Documentation
+    runs-on: docker
+    steps:
+      - uses: actions/checkout@v3
+      - uses: https://codeberg.org/mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+      - name: Build Documentation
+        run: zig build docs -Dtarget=x86_64-linux-gnu
+      - name: Setup Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: "1.21"
+      - name: Deploy
+        uses: https://itsblue.dev/actions/codeberg-pages-deploy@v1
+        with:
+          folder: zig-out/docs
+          git_branch: docs
+          force: true
