@@ -460,14 +460,12 @@ const Cpu = struct {
             .{ .id = 0xF065, .mask = 0xF0FF, .handler = handlerFX65, .inc_pc = true },
         };
 
-        var op: ?Op = null;
-        for (OP_TABLE) |def| {
-            if ((opcode & def.mask) == def.id) {
-                op = def;
-                break;
+        for (OP_TABLE) |op| {
+            if ((opcode & op.mask) == op.id) {
+                return op;
             }
         }
-        return op;
+        return null;
     }
 
     pub fn execute(self: *Cpu, ppu: *Ppu, handler: Handler, opcode: u16, inc_pc: bool) void {
