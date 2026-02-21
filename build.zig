@@ -36,6 +36,7 @@ pub fn build(b: *std.Build) !void {
             .optimize = optimize,
         }),
         .version = try std.SemanticVersion.parse(version),
+        .use_llvm = true,
     });
 
     const options = b.addOptions();

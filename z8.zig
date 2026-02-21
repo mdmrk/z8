@@ -684,8 +684,7 @@ fn init(
         },
     );
     const window, const renderer = win_and_rend;
-    const canvas = try sdl3.render.Texture.init(
-        renderer,
+    const canvas = try renderer.createTexture(
         .packed_rgba_8_8_8_8,
         .streaming,
         Ppu.screen_width,
