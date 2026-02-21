@@ -39,7 +39,6 @@ pub fn build(b: *std.Build) !void {
         .version = try std.SemanticVersion.parse(version),
         .use_llvm = true,
     });
-    exe.lto = .full;
 
     const options = b.addOptions();
     options.addOption([]const u8, "version", version);
@@ -49,7 +48,6 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
         .c_sdl_preferred_linkage = .static,
-        .c_sdl_lto = .full,
     });
     exe.root_module.addImport("sdl3", sdl3.module("sdl3"));
 
