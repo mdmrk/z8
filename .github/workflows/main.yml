@@ -11,7 +11,7 @@ jobs:
       date: ${{ steps.info.outputs.date }}
       commit_hash: ${{ steps.info.outputs.commit_hash }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Get build info
         id: info
         shell: bash
